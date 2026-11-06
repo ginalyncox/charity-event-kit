@@ -13,11 +13,12 @@ function toEvent(r: any): EventRow {
     solo_fee: Number(r.solo_fee),
     games_per_team: Number(r.games_per_team),
     playoff_teams: Number(r.playoff_teams),
+    owner_user_id: num(r.owner_user_id),
   };
 }
 
 function toTeam(r: any): Team {
-  return { ...r, score: num(r.score), raised: Number(r.raised), goal: Number(r.goal) };
+  return { ...r, score: num(r.score), raised: Number(r.raised), goal: Number(r.goal), captain_user_id: num(r.captain_user_id) };
 }
 
 function toPlayer(r: any): Player {
@@ -29,6 +30,7 @@ function toPlayer(r: any): Player {
     goal: Number(r.goal),
     distance: num(r.distance),
     score: num(r.score),
+    user_id: num(r.user_id),
   };
 }
 

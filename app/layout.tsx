@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 import './globals.css';
+import { currentUser } from '@/lib/auth';
+import { logOut } from '@/lib/auth-actions';
 
 export const metadata: Metadata = {
   title: { default: 'Charity Event Kit', template: '%s · Charity Event Kit' },
@@ -10,7 +12,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await currentUser();
   return (
     <html lang="en">
       <body>
@@ -23,7 +26,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <small>by Gina Makes</small>
               </span>
             </Link>
-            <Link href="/new" className="btn small">Create an event</Link>
+            <nav className="btn-row" style={{ gap: 8 }} aria-label="Account">
+              {user ? (
+                <>
+                  <Link href="/account" className="btn small secondary">My events</Link>
+                  <form action={logOut}>
+                    <button className="btn small secondary" aria-label={`Log out ${user.name}`}>Log out</button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <Link href="/login" className="btn small secondary">Log in</Link>
+                  <Link href="/signup" className="btn small">Sign up</Link>
+                </>
+              )}
+            </nav>
           </div>
         </header>
         <main>

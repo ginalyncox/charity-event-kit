@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { timingSafeEqual } from 'node:crypto';
+import { canManage, sameKey } from '@/lib/access';
+import { currentUser } from '@/lib/auth';
+import { query } from '@/lib/db';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import {
   addTeam,
@@ -47,12 +49,6 @@ type Props = {
   searchParams: Promise<Record<string, string | undefined>>;
 };
 
-function keyMatches(a: string, b: string) {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-}
-
 function Auth({ e }: { e: EventRow }) {
   return (
     <>
@@ -66,7 +62,15 @@ export default async function ManagePage({ params, searchParams }: Props) {
   const { slug } = await params;
   const sp = await searchParams;
   const event = await getEventBySlug(slug);
-  if (!event || !sp.key || !keyMatches(event.admin_key, sp.key)) notFound();
+  if (!event || !(await canManage(event, sp.key))) notFound();
+
+  // Someone logged in with a valid organizer link for an event with no owner
+  // (made before accounts existed) becomes its owner.
+  const user = await currentUser();
+  if (user && event.owner_user_id === null && sp.key && sameKey(event.admin_key, sp.key)) {
+    await query('UPDATE events SET owner_user_id = $1 WHERE id = $2 AND owner_user_id IS NULL', [user.id, event.id]);
+    event.owner_user_id = user.id;
+  }
   const bundle = await getBundle(event);
 
   const h = await headers();
@@ -97,9 +101,9 @@ export default async function ManagePage({ params, searchParams }: Props) {
       </div>
 
       {sp.msg === 'created' ? (
-        <div className="notice warn">
-          <b>Bookmark this page now.</b> This private link is the only way back to your organizer tools — anyone with it can
-          make changes, so don’t post it publicly.
+        <div className="notice good">
+          <b>Your event is ready.</b> You can always get back here from <Link href="/account">My events</Link> when you’re logged
+          in. Want a co-organizer? Send them this private link — anyone with it can make changes, so don’t post it publicly.
           <div className="copy small" style={{ marginTop: 6 }}><code>{manageUrl}</code></div>
         </div>
       ) : (

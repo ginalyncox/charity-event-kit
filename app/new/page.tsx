@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import NewEventForm from './NewEventForm';
+import { currentUser } from '@/lib/auth';
 
 export const metadata: Metadata = { title: 'Create an event' };
 
-export default function NewEventPage() {
+export default async function NewEventPage() {
+  if (!(await currentUser())) redirect('/login?next=/new');
   return (
     <>
       <h1>Create an event</h1>

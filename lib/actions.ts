@@ -1,6 +1,5 @@
 'use server';
 
-import { timingSafeEqual } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { one, query } from './db';
@@ -10,21 +9,15 @@ import { randomToken, safeUrl, slugify, text, toCents, toInt, toNum } from './fo
 import { balanceTeams } from './balance';
 import { firstPlayoffRound, nextPlayoffRound, playoffSize, roundRobin, standings } from './bracket';
 import type { EventRow } from './types';
+import { currentUser, normalizeEmail } from './auth';
+import { canManage } from './access';
 
 /* ---------- helpers ---------- */
 
-function sameKey(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-}
-
 async function organizerEvent(fd: FormData): Promise<EventRow> {
-  const slug = text(fd.get('slug'), 100);
-  const key = text(fd.get('key'), 100);
-  const event = await getEventBySlug(slug);
-  if (!event || !key || !sameKey(event.admin_key, key)) {
-    throw new Error('This organizer link is not valid.');
+  const event = await getEventBySlug(text(fd.get('slug'), 100));
+  if (!event || !(await canManage(event, text(fd.get('key'), 100)))) {
+    throw new Error('You don’t have organizer access to this event.');
   }
   return event;
 }
@@ -46,6 +39,8 @@ const KINDS: EventKind[] = ['bracket', 'leaderboard', 'pledge'];
 /* ---------- create event ---------- */
 
 export async function createEvent(fd: FormData) {
+  const user = await currentUser();
+  if (!user) redirect('/login?next=/new');
   const name = text(fd.get('name'), 120);
   if (!name) throw new Error('Event name is required.');
 
@@ -72,8 +67,8 @@ export async function createEvent(fd: FormData) {
   const ev = await one<{ id: number }>(
     `INSERT INTO events (slug, admin_key, name, charity, description, event_date, location, contact_email,
        kind, sport, team_mode, team_size, positions, team_fee, solo_fee, payment_url,
-       allow_teams, allow_solo, games_per_team, playoff_teams, score_label, score_order, pledge_unit)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+       allow_teams, allow_solo, games_per_team, playoff_teams, score_label, score_order, pledge_unit, owner_user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
      RETURNING id`,
     [
       slug,
@@ -100,6 +95,7 @@ export async function createEvent(fd: FormData) {
       text(fd.get('score_label'), 50) || 'Score',
       text(fd.get('score_order'), 5) === 'low' ? 'low' : 'high',
       text(fd.get('pledge_unit'), 30) || 'miles',
+      user.id,
     ],
   );
 
@@ -126,9 +122,10 @@ export async function registerTeam(fd: FormData) {
   const event = await openEvent(fd);
   if (!event.allow_teams) throw new Error('This event takes solo sign-ups only.');
 
+  const user = await currentUser();
   const teamName = text(fd.get('team_name'), 80);
-  const captain = text(fd.get('captain_name'), 80);
-  const email = text(fd.get('captain_email'), 200);
+  const captain = text(fd.get('captain_name'), 80) || user?.name || '';
+  const email = normalizeEmail(text(fd.get('captain_email'), 200) || user?.email || '');
   if (!teamName || !captain) throw new Error('Team name and captain name are required.');
 
   const members = text(fd.get('members'), 4000)
@@ -143,17 +140,20 @@ export async function registerTeam(fd: FormData) {
 
   const order = await one<{ n: number }>('SELECT COALESCE(MAX(sort_order),0)+1 AS n FROM teams WHERE event_id=$1', [event.id]);
   const team = await one<{ id: number }>(
-    `INSERT INTO teams (event_id, name, captain_name, captain_email, origin, goal, sort_order)
-     VALUES ($1,$2,$3,$4,'registered',$5,$6) RETURNING id`,
-    [event.id, teamName, captain, email, toCents(fd.get('goal')), Number(order?.n ?? 1)],
+    `INSERT INTO teams (event_id, name, captain_name, captain_email, captain_user_id, origin, goal, sort_order)
+     VALUES ($1,$2,$3,$4,$5,'registered',$6,$7) RETURNING id`,
+    [event.id, teamName, captain, email, user?.id ?? null, toCents(fd.get('goal')), Number(order?.n ?? 1)],
   );
 
   for (const line of members) {
     // "Name" or "Name, Position"
     const [pname, pos] = line.split(',').map((s) => s.trim());
+    // The captain's own line is linked to their account (if logged in).
+    const isCaptain = pname.toLowerCase() === captain.toLowerCase();
     await query(
-      `INSERT INTO players (event_id, team_id, name, position, is_solo, locked) VALUES ($1,$2,$3,$4,FALSE,TRUE)`,
-      [event.id, team!.id, pname.slice(0, 80), (pos ?? '').slice(0, 40)],
+      `INSERT INTO players (event_id, team_id, name, email, user_id, position, is_solo, locked)
+       VALUES ($1,$2,$3,$4,$5,$6,FALSE,TRUE)`,
+      [event.id, team!.id, pname.slice(0, 80), isCaptain ? email : '', isCaptain ? user?.id ?? null : null, (pos ?? '').slice(0, 40)],
     );
   }
 
@@ -165,16 +165,18 @@ export async function registerSolo(fd: FormData) {
   const event = await openEvent(fd);
   if (!event.allow_solo) throw new Error('This event takes whole-team sign-ups only.');
 
-  const name = text(fd.get('name'), 80);
+  const user = await currentUser();
+  const name = text(fd.get('name'), 80) || user?.name || '';
   if (!name) throw new Error('Your name is required.');
 
   await query(
-    `INSERT INTO players (event_id, name, email, position, skill, choice, honoring, goal, is_solo, locked)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,FALSE)`,
+    `INSERT INTO players (event_id, user_id, name, email, position, skill, choice, honoring, goal, is_solo, locked)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,FALSE)`,
     [
       event.id,
+      user?.id ?? null,
       name,
-      text(fd.get('email'), 200),
+      normalizeEmail(text(fd.get('email'), 200) || user?.email || ''),
       text(fd.get('position'), 40),
       toInt(fd.get('skill'), 3, 1, 5),
       text(fd.get('choice'), 80),

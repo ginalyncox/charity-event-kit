@@ -26,6 +26,7 @@ export type EventRow = {
   score_order: 'high' | 'low';
   pledge_unit: string;
   signups_open: boolean;
+  owner_user_id: number | null;
 };
 
 /** The public view never includes the organizer key. */
@@ -43,6 +44,7 @@ export type Team = {
   raised: number;
   goal: number;
   sort_order: number;
+  captain_user_id: number | null;
 };
 
 export type Player = {
@@ -62,6 +64,7 @@ export type Player = {
   goal: number;
   distance: number | null;
   score: number | null;
+  user_id: number | null;
 };
 
 export type Game = {

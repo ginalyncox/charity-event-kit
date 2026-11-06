@@ -1,5 +1,5 @@
 import 'server-only';
-import { SCHEMA } from './schema';
+import { SCHEMA, SCHEMA_VERSION } from './schema';
 
 type Row = Record<string, any>;
 type Runner = (text: string, params?: unknown[]) => Promise<Row[]>;
@@ -22,7 +22,17 @@ async function createRunner(): Promise<Runner> {
     run = async (text, params = []) => (await db.query(text, params as any[])).rows as Row[];
   }
 
-  for (const stmt of SCHEMA) await run(stmt);
+  // Only run the (idempotent) schema when the stored version differs, so a
+  // cold start is two quick queries instead of a dozen.
+  await run(`CREATE TABLE IF NOT EXISTS app_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
+  const ver = await run(`SELECT v FROM app_meta WHERE k = 'schema_version'`);
+  if (ver[0]?.v !== SCHEMA_VERSION) {
+    for (const stmt of SCHEMA) await run(stmt);
+    await run(
+      `INSERT INTO app_meta (k, v) VALUES ('schema_version', $1) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`,
+      [SCHEMA_VERSION],
+    );
+  }
   return run;
 }
 

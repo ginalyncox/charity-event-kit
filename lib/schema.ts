@@ -1,3 +1,6 @@
+// Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
+export const SCHEMA_VERSION = '2';
+
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
   `CREATE TABLE IF NOT EXISTS events (
@@ -76,4 +79,24 @@ export const SCHEMA: string[] = [
   `CREATE INDEX IF NOT EXISTS teams_event_idx ON teams(event_id)`,
   `CREATE INDEX IF NOT EXISTS players_event_idx ON players(event_id)`,
   `CREATE INDEX IF NOT EXISTS games_event_idx ON games(event_id)`,
+  `CREATE TABLE IF NOT EXISTS users (
+    id            SERIAL PRIMARY KEY,
+    email         TEXT UNIQUE NOT NULL,
+    name          TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+    token_hash    TEXT PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE teams ADD COLUMN IF NOT EXISTS captain_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+  `CREATE INDEX IF NOT EXISTS events_owner_idx ON events(owner_user_id)`,
+  `CREATE INDEX IF NOT EXISTS players_user_idx ON players(user_id)`,
+  `CREATE INDEX IF NOT EXISTS players_email_idx ON players(lower(email))`,
+  `CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id)`,
 ];

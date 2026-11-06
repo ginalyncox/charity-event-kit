@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import { registerSolo, registerTeam } from '@/lib/actions';
 import { feeLabel } from '@/lib/format';
+import { currentUser } from '@/lib/auth';
+import Link from 'next/link';
 import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable } from '@/app/ui';
 
 type Props = {
@@ -24,6 +26,8 @@ export default async function EventPage({ params, searchParams }: Props) {
   const event = await getEventBySlug(slug);
   if (!event) notFound();
   const bundle = await getBundle(event);
+  const user = await currentUser();
+  const mine = user ? bundle.players.filter((p) => p.user_id === user.id) : [];
   const fees = feeLabel(event);
   const isPledge = event.kind === 'pledge';
 
@@ -66,6 +70,23 @@ export default async function EventPage({ params, searchParams }: Props) {
       )}
       {sp.err && <div className="notice warn">{sp.err}</div>}
 
+      {mine.length > 0 && !sp.joined && (
+        <div className="notice info">
+          You’re signed up
+          {mine.map((p) => {
+            const t = bundle.teams.find((x) => x.id === p.team_id);
+            return <span key={p.id}>{t ? <> on <b>{t.name}</b></> : ' (team coming soon)'}</span>;
+          })}
+          . See your games and teammates in <Link href="/account">My events</Link>.
+        </div>
+      )}
+      {!user && event.signups_open && (
+        <p className="small muted">
+          Have an account? <Link href={`/login?next=/e/${event.slug}`}>Log in</Link> so this event shows up in My events. You can
+          also sign up without one.
+        </p>
+      )}
+
       <ChampionBanner bundle={bundle} />
 
       <section id="join">
@@ -80,11 +101,11 @@ export default async function EventPage({ params, searchParams }: Props) {
                   <input type="hidden" name="slug" value={event.slug} />
                   <label>
                     Your name
-                    <input name="name" required maxLength={80} autoComplete="name" />
+                    <input name="name" required maxLength={80} autoComplete="name" defaultValue={user?.name ?? ''} />
                   </label>
                   <label>
                     Email <span className="hint">Only the organizer sees this.</span>
-                    <input name="email" type="email" maxLength={200} autoComplete="email" />
+                    <input name="email" type="email" maxLength={200} autoComplete="email" defaultValue={user?.email ?? ''} />
                   </label>
                   {event.positions.length > 0 && (
                     <label>
@@ -146,11 +167,11 @@ export default async function EventPage({ params, searchParams }: Props) {
                   <div className="row-2">
                     <label>
                       Captain name
-                      <input name="captain_name" required maxLength={80} />
+                      <input name="captain_name" required maxLength={80} defaultValue={user?.name ?? ''} />
                     </label>
                     <label>
                       Captain email <span className="hint">Only the organizer sees this.</span>
-                      <input name="captain_email" type="email" maxLength={200} />
+                      <input name="captain_email" type="email" maxLength={200} defaultValue={user?.email ?? ''} />
                     </label>
                   </div>
                   <label>
