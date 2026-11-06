@@ -1,8 +1,10 @@
 import Link from 'next/link';
 
-export default function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
   return (
     <>
+      {sp.deleted && <div className="notice good">Your account was deleted.</div>}
       <section className="hero">
         <p className="eyebrow">For charity tournaments, rides, and walks</p>
         <h1>Run your charity event without the spreadsheet.</h1>

@@ -664,3 +664,92 @@ export async function updateMyTeam(fd: FormData) {
   revalidatePath('/account');
   redirect('/account?msg=Team+fundraising+saved');
 }
+
+/* ---------- co-organizers ---------- */
+
+export async function addCoOrganizer(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const email = normalizeEmail(text(fd.get('email'), 200));
+  if (!email.includes('@')) redirect(manageUrl(event, 'Enter an email address.', 'settings'));
+  const u = await one<{ id: number; name: string }>('SELECT id, name FROM users WHERE email = $1', [email]);
+  if (!u) {
+    redirect(manageUrl(event, `No account uses ${email} yet. Ask them to sign up first, then add them.`, 'settings'));
+  }
+  await query(
+    `INSERT INTO event_admins (event_id, email, user_id) VALUES ($1,$2,$3)
+     ON CONFLICT (event_id, email) DO UPDATE SET user_id = EXCLUDED.user_id`,
+    [event.id, email, u.id],
+  );
+  refresh(event);
+  redirect(manageUrl(event, `Added ${u.name || email} as a co-organizer. Check that’s the right person.`, 'settings'));
+}
+
+export async function removeCoOrganizer(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('DELETE FROM event_admins WHERE event_id=$1 AND email=$2', [event.id, normalizeEmail(text(fd.get('email'), 200))]);
+  refresh(event);
+  redirect(manageUrl(event, 'Co-organizer removed', 'settings'));
+}
+
+/* ---------- copy an event (for next year) ---------- */
+
+export async function copyEvent(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const user = await currentUser();
+  if (!user) redirect('/login?next=/account');
+  // "Salute 2026" becomes "Salute 2027"; otherwise add "(copy)".
+  const name = /\b(20\d\d)\b/.test(event.name)
+    ? event.name.replace(/\b(20\d\d)\b/, (y) => String(Number(y) + 1))
+    : `${event.name} (copy)`;
+  const slug = `${slugify(name)}-${randomToken(2)}`;
+  const ev = await one<{ id: number }>(
+    `INSERT INTO events (slug, admin_key, name, charity, description, event_date, location, contact_email,
+       kind, sport, team_mode, team_size, positions, team_fee, solo_fee, payment_url, allow_teams, allow_solo,
+       games_per_team, playoff_teams, score_label, score_order, pledge_unit, owner_user_id,
+       stream_url, fundraising_goal, sponsors, waiver_text, jersey_sizes, copied_from, signups_open)
+     SELECT $1, $2, $3, charity, description, '', location, contact_email,
+       kind, sport, team_mode, team_size, positions, team_fee, solo_fee, payment_url, allow_teams, allow_solo,
+       games_per_team, playoff_teams, score_label, score_order, pledge_unit, $4,
+       '', fundraising_goal, sponsors, waiver_text, jersey_sizes, id, FALSE
+     FROM events WHERE id = $5 RETURNING id`,
+    [slug, randomToken(16), name, user.id, event.id],
+  );
+  const newId = ev!.id;
+  await query(
+    `INSERT INTO teams (event_id, name, origin, sort_order)
+     SELECT $1, name, 'set', sort_order FROM teams WHERE event_id = $2 AND origin = 'set'`,
+    [newId, event.id],
+  );
+  await query(`INSERT INTO shifts (event_id, role, when_text, slots) SELECT $1, role, '', slots FROM shifts WHERE event_id = $2`, [newId, event.id]);
+  await query(`INSERT INTO awards (event_id, title, choice_type) SELECT $1, title, choice_type FROM awards WHERE event_id = $2`, [newId, event.id]);
+  await query(`INSERT INTO event_admins (event_id, email, user_id) SELECT $1, email, user_id FROM event_admins WHERE event_id = $2`, [newId, event.id]);
+  redirect(`/manage/${slug}?msg=${encodeURIComponent('Copied! Sign-ups start closed — update the date, then open sign-ups in Settings.')}&tab=settings`);
+}
+
+/* ---------- delete my account ---------- */
+
+export async function deleteMyAccount(fd: FormData) {
+  const user = await currentUser();
+  if (!user) redirect('/login');
+  if (text(fd.get('confirm'), 20) !== 'DELETE') redirect('/account/settings?err=Type+DELETE+to+confirm.');
+  // Events you own go to a co-organizer if there is one; otherwise they're deleted.
+  const owned = await query<{ id: number }>('SELECT id FROM events WHERE owner_user_id = $1', [user.id]);
+  for (const e of owned) {
+    const co = await one<{ user_id: number }>(
+      'SELECT user_id FROM event_admins WHERE event_id = $1 AND user_id IS NOT NULL AND user_id <> $2 LIMIT 1',
+      [e.id, user.id],
+    );
+    if (co) await query('UPDATE events SET owner_user_id = $1 WHERE id = $2', [co.user_id, e.id]);
+    else await query('DELETE FROM events WHERE id = $1', [e.id]);
+  }
+  // Sign-ups stay on organizers' rosters (their records), but are unlinked and the email is removed.
+  await query(`UPDATE players SET user_id = NULL, email = '' WHERE user_id = $1`, [user.id]);
+  await query(`UPDATE teams SET captain_user_id = NULL, captain_email = '' WHERE captain_user_id = $1`, [user.id]);
+  await query(`UPDATE goal_pledges SET user_id = NULL, email = '' WHERE user_id = $1`, [user.id]);
+  await query(`UPDATE shift_signups SET user_id = NULL, email = '' WHERE user_id = $1`, [user.id]);
+  await query('DELETE FROM event_admins WHERE user_id = $1 OR email = $2', [user.id, user.email]);
+  await query('DELETE FROM users WHERE id = $1', [user.id]); // sessions, bids, alerts go with it
+  const { cookies } = await import('next/headers');
+  (await cookies()).delete('cek_session');
+  redirect('/?deleted=1');
+}

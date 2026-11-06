@@ -20,7 +20,11 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const user = await currentUser();
   if (!user) redirect('/login?next=/account');
 
-  const owned = await query<{ slug: string }>('SELECT slug FROM events WHERE owner_user_id = $1 ORDER BY id DESC', [user.id]);
+  const owned = await query<{ slug: string }>(
+    `SELECT DISTINCT e.slug, e.id FROM events e LEFT JOIN event_admins a ON a.event_id = e.id AND a.user_id = $1
+     WHERE e.owner_user_id = $1 OR a.user_id IS NOT NULL ORDER BY e.id DESC`,
+    [user.id],
+  );
   const playing = await query<{ slug: string }>(
     `SELECT DISTINCT e.slug, e.id FROM events e
        LEFT JOIN players p ON p.event_id = e.id AND p.user_id = $1
@@ -36,7 +40,10 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <p className="eyebrow">Hi, {user.name || user.email}</p>
-      <h1>My events</h1>
+      <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+        <h1 style={{ margin: 0 }}>My events</h1>
+        <Link href="/account/settings" className="btn small secondary">Account settings</Link>
+      </div>
       <AutoRefresh seconds={30} />
       {sp.msg && <div className="notice good" role="status">{sp.msg}</div>}
 

@@ -32,6 +32,9 @@ export type EventRow = {
   sponsors: string;
   waiver_text: string;
   start_at: string;
+  jersey_sizes: string;
+  pledges_open: boolean;
+  copied_from: number | null;
 };
 
 /** The public view never includes the organizer key. */
@@ -75,6 +78,8 @@ export type Player = {
   waiver_agreed_at: string | null;
   waiver_name: string;
   pay_url: string;
+  jersey_size: string;
+  jersey_number: string;
 };
 
 export type Game = {

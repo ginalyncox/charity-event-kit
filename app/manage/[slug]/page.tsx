@@ -7,7 +7,10 @@ import { currentUser } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import {
+  addCoOrganizer,
   addTeam,
+  copyEvent,
+  removeCoOrganizer,
   advancePlayoffs,
   balanceAction,
   deleteEvent,
@@ -80,6 +83,10 @@ export default async function ManagePage({ params, searchParams }: Props) {
     event.owner_user_id = user.id;
   }
   const bundle = await getBundle(event);
+  const admins = await query<{ email: string; name: string | null }>(
+    `SELECT a.email, u.name FROM event_admins a LEFT JOIN users u ON u.id = a.user_id WHERE a.event_id = $1 ORDER BY a.created_at`,
+    [event.id],
+  );
 
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
@@ -134,7 +141,7 @@ export default async function ManagePage({ params, searchParams }: Props) {
       {tab === 'teams' && <Teams bundle={bundle} />}
       {tab === 'games' && <Games bundle={bundle} />}
       {tab === 'results' && <Results bundle={bundle} />}
-      {tab === 'settings' && <Settings bundle={bundle} />}
+      {tab === 'settings' && <Settings bundle={bundle} admins={admins} />}
       {tab === 'checkin' && <CheckIn bundle={bundle} q={sp.q ?? ''} />}
       {tab === 'money' && <Fundraising bundle={bundle} />}
       {tab === 'message' && <Message bundle={bundle} />}
@@ -625,7 +632,7 @@ function Results({ bundle }: { bundle: Bundle }) {
 
 /* ---------------- Settings ---------------- */
 
-function Settings({ bundle }: { bundle: Bundle }) {
+function Settings({ bundle, admins }: { bundle: Bundle; admins: { email: string; name: string | null }[] }) {
   const { event } = bundle;
   const dollars = (c: number) => (c ? (c / 100).toString() : '');
   return (
@@ -693,6 +700,37 @@ function Settings({ bundle }: { bundle: Bundle }) {
             <textarea name="waiver_text" defaultValue={event.waiver_text} rows={6} placeholder="I understand hockey involves risk of injury... I agree this event may be photographed and live streamed..." />
           </label>
           <button className="btn">Save settings</button>
+        </form>
+      </div>
+      <div className="card">
+        <h2>Co-organizers</h2>
+        <p className="small muted">People who can manage this event from their own account. They need to sign up first.</p>
+        {admins.length > 0 && (
+          <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px' }}>
+            {admins.map((a) => (
+              <li key={a.email} className="btn-row" style={{ justifyContent: 'space-between', padding: '6px 0', borderTop: '1px solid var(--line)' }}>
+                <span>{a.name ? <b>{a.name}</b> : null} <span className="small muted">{a.email}</span></span>
+                <form action={removeCoOrganizer}>
+                  <Auth e={event} />
+                  <input type="hidden" name="email" value={a.email} />
+                  <ConfirmButton className="btn small danger" message={`Remove ${a.email} as a co-organizer?`}>Remove</ConfirmButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form action={addCoOrganizer} className="btn-row">
+          <Auth e={event} />
+          <input name="email" type="email" placeholder="their account email" required style={{ flex: 1, minWidth: 200 }} aria-label="Co-organizer email" />
+          <button className="btn secondary">Add co-organizer</button>
+        </form>
+      </div>
+      <div className="card">
+        <h2>Copy for next year</h2>
+        <p className="small muted">Makes a new event with the same settings, team list, waiver, sponsors, volunteer shifts, awards, and co-organizers — but no sign-ups or scores.</p>
+        <form action={copyEvent}>
+          <Auth e={event} />
+          <button className="btn secondary">Copy this event</button>
         </form>
       </div>
       <div className="card">

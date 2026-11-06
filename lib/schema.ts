@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '5';
+export const SCHEMA_VERSION = '6';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -130,4 +130,91 @@ export const SCHEMA: string[] = [
   // v5: personal and team pay links
   `ALTER TABLE players ADD COLUMN IF NOT EXISTS pay_url TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE teams ADD COLUMN IF NOT EXISTS pay_url TEXT NOT NULL DEFAULT ''`,
+  // v6: co-organizers, pledges, auction, jerseys, volunteers, awards, push alerts
+  `CREATE TABLE IF NOT EXISTS event_admins (
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    email         TEXT NOT NULL,
+    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (event_id, email)
+  )`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS jersey_sizes TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS pledges_open BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS copied_from INTEGER`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS jersey_size TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS jersey_number TEXT NOT NULL DEFAULT ''`,
+  `CREATE TABLE IF NOT EXISTS goal_pledges (
+    id            SERIAL PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    team_id       INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    email         TEXT NOT NULL DEFAULT '',
+    per_goal      INTEGER NOT NULL,
+    max_total     INTEGER NOT NULL DEFAULT 0,
+    paid          BOOLEAN NOT NULL DEFAULT FALSE,
+    user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS auction_items (
+    id            SERIAL PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    donor         TEXT NOT NULL DEFAULT '',
+    start_bid     INTEGER NOT NULL DEFAULT 0,
+    increment     INTEGER NOT NULL DEFAULT 500,
+    closed        BOOLEAN NOT NULL DEFAULT FALSE,
+    paid          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS auction_bids (
+    id            SERIAL PRIMARY KEY,
+    item_id       INTEGER NOT NULL REFERENCES auction_items(id) ON DELETE CASCADE,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    amount        INTEGER NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS auction_bids_item_idx ON auction_bids(item_id, amount DESC)`,
+  `CREATE TABLE IF NOT EXISTS shifts (
+    id            SERIAL PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,
+    when_text     TEXT NOT NULL DEFAULT '',
+    slots         INTEGER NOT NULL DEFAULT 1,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS shift_signups (
+    id            SERIAL PRIMARY KEY,
+    shift_id      INTEGER NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    email         TEXT NOT NULL DEFAULT '',
+    user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS awards (
+    id            SERIAL PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    choice_type   TEXT NOT NULL DEFAULT 'player',
+    open          BOOLEAN NOT NULL DEFAULT TRUE,
+    published     BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS award_votes (
+    award_id      INTEGER NOT NULL REFERENCES awards(id) ON DELETE CASCADE,
+    voter         TEXT NOT NULL,
+    choice        TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (award_id, voter)
+  )`,
+  `CREATE TABLE IF NOT EXISTS push_subs (
+    endpoint      TEXT PRIMARY KEY,
+    p256dh        TEXT NOT NULL,
+    auth          TEXT NOT NULL,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    team_id       INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS push_subs_event_idx ON push_subs(event_id)`,
 ];

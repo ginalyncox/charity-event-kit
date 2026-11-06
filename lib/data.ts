@@ -15,6 +15,7 @@ function toEvent(r: any): EventRow {
     playoff_teams: Number(r.playoff_teams),
     owner_user_id: num(r.owner_user_id),
     fundraising_goal: Number(r.fundraising_goal ?? 0),
+    copied_from: num(r.copied_from),
   };
 }
 
