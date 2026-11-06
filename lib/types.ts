@@ -27,6 +27,11 @@ export type EventRow = {
   pledge_unit: string;
   signups_open: boolean;
   owner_user_id: number | null;
+  stream_url: string;
+  fundraising_goal: number;
+  sponsors: string;
+  waiver_text: string;
+  start_at: string;
 };
 
 /** The public view never includes the organizer key. */
@@ -65,6 +70,9 @@ export type Player = {
   distance: number | null;
   score: number | null;
   user_id: number | null;
+  checked_in: boolean;
+  waiver_agreed_at: string | null;
+  waiver_name: string;
 };
 
 export type Game = {
@@ -77,6 +85,9 @@ export type Game = {
   away_team_id: number | null;
   home_score: number | null;
   away_score: number | null;
+  stream_url: string;
+  starts_at: string;
+  rink: string;
 };
 
 export type Bundle = {

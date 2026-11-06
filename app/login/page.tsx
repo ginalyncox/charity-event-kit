@@ -35,8 +35,8 @@ export default async function LoginPage({ searchParams }: Props) {
       <p>
         New here? <Link href={`/signup?next=${encodeURIComponent(next)}`}>Create an account</Link>
       </p>
-      <p className="small muted">
-        Forgot your password? Email-based resets aren’t set up yet — contact your event organizer or Gina Makes for help.
+      <p className="small">
+        <Link href="/forgot">Forgot your password?</Link>
       </p>
     </div>
   );

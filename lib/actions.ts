@@ -11,6 +11,7 @@ import { firstPlayoffRound, nextPlayoffRound, playoffSize, roundRobin, standings
 import type { EventRow } from './types';
 import { currentUser, normalizeEmail } from './auth';
 import { canManage } from './access';
+import { allow, clientIp } from './ratelimit';
 
 /* ---------- helpers ---------- */
 
@@ -115,6 +116,16 @@ async function openEvent(fd: FormData): Promise<EventRow> {
   const event = await getEventBySlug(text(fd.get('slug'), 100));
   if (!event) throw new Error('Event not found.');
   if (!event.signups_open) redirect(`/e/${event.slug}?closed=1`);
+  // Spam guard 1: a hidden "website" field people never see. Bots fill it in.
+  if (text(fd.get('website'), 200)) redirect(`/e/${event.slug}?joined=solo`);
+  // Spam guard 2: at most 25 sign-ups per connection per event in 10 minutes.
+  if (!(await allow(`join:${event.id}:${await clientIp()}`, 25, 10))) {
+    redirect(`/e/${event.slug}?err=${encodeURIComponent('Lots of sign-ups from this connection. Please wait a few minutes and try again.')}#join`);
+  }
+  // Waiver: when the organizer has one, people must agree to sign up.
+  if (event.waiver_text && fd.get('waiver') !== 'on') {
+    redirect(`/e/${event.slug}?err=${encodeURIComponent('Please read and agree to the event waiver to sign up.')}#join`);
+  }
   return event;
 }
 
@@ -150,10 +161,21 @@ export async function registerTeam(fd: FormData) {
     const [pname, pos] = line.split(',').map((s) => s.trim());
     // The captain's own line is linked to their account (if logged in).
     const isCaptain = pname.toLowerCase() === captain.toLowerCase();
+    // The captain agrees to the waiver for the team they're registering.
+    const agreed = Boolean(event.waiver_text);
     await query(
-      `INSERT INTO players (event_id, team_id, name, email, user_id, position, is_solo, locked)
-       VALUES ($1,$2,$3,$4,$5,$6,FALSE,TRUE)`,
-      [event.id, team!.id, pname.slice(0, 80), isCaptain ? email : '', isCaptain ? user?.id ?? null : null, (pos ?? '').slice(0, 40)],
+      `INSERT INTO players (event_id, team_id, name, email, user_id, position, is_solo, locked, waiver_agreed_at, waiver_name)
+       VALUES ($1,$2,$3,$4,$5,$6,FALSE,TRUE, CASE WHEN $7 THEN now() END, $8)`,
+      [
+        event.id,
+        team!.id,
+        pname.slice(0, 80),
+        isCaptain ? email : '',
+        isCaptain ? user?.id ?? null : null,
+        (pos ?? '').slice(0, 40),
+        agreed,
+        agreed ? `${captain} (team captain)` : '',
+      ],
     );
   }
 
@@ -170,8 +192,9 @@ export async function registerSolo(fd: FormData) {
   if (!name) throw new Error('Your name is required.');
 
   await query(
-    `INSERT INTO players (event_id, user_id, name, email, position, skill, choice, honoring, goal, is_solo, locked)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,FALSE)`,
+    `INSERT INTO players (event_id, user_id, name, email, position, skill, choice, honoring, goal, is_solo, locked,
+       waiver_agreed_at, waiver_name)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,FALSE, CASE WHEN $10 THEN now() END, CASE WHEN $10 THEN $3 ELSE '' END)`,
     [
       event.id,
       user?.id ?? null,
@@ -182,6 +205,7 @@ export async function registerSolo(fd: FormData) {
       text(fd.get('choice'), 80),
       text(fd.get('honoring'), 120),
       toCents(fd.get('goal')),
+      Boolean(event.waiver_text),
     ],
   );
 
@@ -326,7 +350,8 @@ export async function updateSettings(fd: FormData) {
   await query(
     `UPDATE events SET name=$1, charity=$2, description=$3, event_date=$4, location=$5, contact_email=$6,
        team_fee=$7, solo_fee=$8, payment_url=$9, team_size=$10, games_per_team=$11, playoff_teams=$12,
-       score_label=$13, score_order=$14, pledge_unit=$15
+       score_label=$13, score_order=$14, pledge_unit=$15,
+       stream_url=$17, fundraising_goal=$18, sponsors=$19, waiver_text=$20
      WHERE id=$16`,
     [
       text(fd.get('name'), 120) || event.name,
@@ -345,6 +370,10 @@ export async function updateSettings(fd: FormData) {
       fd.has('score_order') ? (text(fd.get('score_order'), 5) === 'low' ? 'low' : 'high') : event.score_order,
       text(fd.get('pledge_unit'), 30) || event.pledge_unit,
       event.id,
+      fd.has('stream_url') ? safeUrl(fd.get('stream_url')) : event.stream_url,
+      fd.has('fundraising_goal') ? toCents(fd.get('fundraising_goal')) : event.fundraising_goal,
+      fd.has('sponsors') ? text(fd.get('sponsors'), 3000) : event.sponsors,
+      fd.has('waiver_text') ? text(fd.get('waiver_text'), 8000) : event.waiver_text,
     ],
   );
   refresh(event);
@@ -443,4 +472,16 @@ export async function savePlayerResult(fd: FormData) {
   ]);
   refresh(event);
   redirect(manageUrl(event, 'Saved', 'results'));
+}
+
+/* ---------- organizer: delete event ---------- */
+
+export async function deleteEvent(fd: FormData) {
+  const event = await organizerEvent(fd);
+  if (text(fd.get('confirm_name'), 200) !== event.name) {
+    redirect(manageUrl(event, 'To delete, type the event name exactly.', 'settings'));
+  }
+  await query('DELETE FROM events WHERE id=$1', [event.id]);
+  revalidatePath('/account');
+  redirect('/account?msg=Event+deleted');
 }

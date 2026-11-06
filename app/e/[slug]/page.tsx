@@ -7,6 +7,32 @@ import { currentUser } from '@/lib/auth';
 import Link from 'next/link';
 import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable } from '@/app/ui';
 
+/** Hidden spam trap plus the waiver checkbox, shared by both sign-up forms. */
+function FormExtras({ waiver, who }: { waiver: string; who: string }) {
+  return (
+    <>
+      <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+        <label>
+          Website
+          <input name="website" tabIndex={-1} autoComplete="off" />
+        </label>
+      </div>
+      {waiver && (
+        <div className="waiver">
+          <details>
+            <summary>Read the event waiver</summary>
+            <p className="small" style={{ whiteSpace: 'pre-line', marginTop: 8 }}>{waiver}</p>
+          </details>
+          <label className="check">
+            <input type="checkbox" name="waiver" required />
+            {who}
+          </label>
+        </div>
+      )}
+    </>
+  );
+}
+
 type Props = {
   params: Promise<{ slug: string }>;
   searchParams: Promise<Record<string, string | undefined>>;
@@ -151,6 +177,7 @@ export default async function EventPage({ params, searchParams }: Props) {
                       <input name="goal" inputMode="decimal" placeholder="100" />
                     </label>
                   )}
+                  <FormExtras waiver={event.waiver_text} who="I have read and agree to the event waiver." />
                   <button type="submit" className="btn">Sign me up</button>
                 </form>
               </div>
@@ -188,6 +215,7 @@ export default async function EventPage({ params, searchParams }: Props) {
                       <input name="goal" inputMode="decimal" />
                     </label>
                   )}
+                  <FormExtras waiver={event.waiver_text} who="As captain, I agree to the waiver and will share it with my team." />
                   <button type="submit" className="btn">Register our team</button>
                 </form>
               </div>

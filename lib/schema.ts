@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '2';
+export const SCHEMA_VERSION = '3';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -99,4 +99,29 @@ export const SCHEMA: string[] = [
   `CREATE INDEX IF NOT EXISTS players_user_idx ON players(user_id)`,
   `CREATE INDEX IF NOT EXISTS players_email_idx ON players(lower(email))`,
   `CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id)`,
+  // v3: safety, game day, organizer tools, fundraising
+  `CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash    TEXT PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    used          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS rate_hits (
+    id            SERIAL PRIMARY KEY,
+    bucket        TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS rate_hits_bucket_idx ON rate_hits(bucket, created_at)`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS stream_url TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS fundraising_goal INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS sponsors TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS waiver_text TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS start_at TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE games ADD COLUMN IF NOT EXISTS stream_url TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE games ADD COLUMN IF NOT EXISTS starts_at TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE games ADD COLUMN IF NOT EXISTS rink TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS checked_in BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS waiver_agreed_at TIMESTAMPTZ`,
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS waiver_name TEXT NOT NULL DEFAULT ''`,
 ];

@@ -14,6 +14,7 @@ function toEvent(r: any): EventRow {
     games_per_team: Number(r.games_per_team),
     playoff_teams: Number(r.playoff_teams),
     owner_user_id: num(r.owner_user_id),
+    fundraising_goal: Number(r.fundraising_goal ?? 0),
   };
 }
 
@@ -31,6 +32,7 @@ function toPlayer(r: any): Player {
     distance: num(r.distance),
     score: num(r.score),
     user_id: num(r.user_id),
+    waiver_agreed_at: r.waiver_agreed_at ? new Date(r.waiver_agreed_at).toISOString() : null,
   };
 }
 

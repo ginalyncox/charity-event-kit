@@ -10,6 +10,7 @@ import {
   addTeam,
   advancePlayoffs,
   balanceAction,
+  deleteEvent,
   makeSchedule,
   movePlayer,
   removePlayer,
@@ -27,6 +28,7 @@ import {
 import { rosterWarnings } from '@/lib/balance';
 import { champion, nextPlayoffRound } from '@/lib/bracket';
 import { money } from '@/lib/format';
+import ConfirmButton from '@/app/ConfirmButton';
 import type { Bundle, EventRow } from '@/lib/types';
 import {
   activeTeams,
@@ -258,7 +260,7 @@ function People({ bundle }: { bundle: Bundle }) {
                       <form action={removePlayer}>
                         <Auth e={event} />
                         <input type="hidden" name="player_id" value={p.id} />
-                        <button className="btn small danger" aria-label={`Remove ${p.name}`}>Remove</button>
+                        <ConfirmButton className="btn small danger" message={`Remove ${p.name} from this event?`}>Remove</ConfirmButton>
                       </form>
                     </td>
                   </tr>
@@ -374,7 +376,7 @@ function Teams({ bundle }: { bundle: Bundle }) {
                 <form action={removeTeam} style={{ marginTop: 8 }}>
                   <Auth e={event} />
                   <input type="hidden" name="team_id" value={t.id} />
-                  <button className="btn small danger">Remove team</button>
+                  <ConfirmButton className="btn small danger" message={`Remove ${t.name}? Teammates who registered with it are removed too.`}>Remove team</ConfirmButton>
                   <span className="small muted"> Solo players go back to “waiting.”</span>
                 </form>
               </details>
@@ -389,6 +391,18 @@ function Teams({ bundle }: { bundle: Bundle }) {
           <Auth e={event} />
           <input name="team_name" placeholder="Team name" required maxLength={80} style={{ flex: 1 }} />
           <button className="btn secondary">Add team</button>
+        </form>
+      </div>
+      <div className="card">
+        <h2>Delete this event</h2>
+        <p className="small muted">This permanently removes the event, everyone’s sign-ups, teams, and scores. It can’t be undone.</p>
+        <form action={deleteEvent} className="stack">
+          <Auth e={event} />
+          <label>
+            Type the event name to confirm: <b>{event.name}</b>
+            <input name="confirm_name" autoComplete="off" />
+          </label>
+          <ConfirmButton className="btn danger" message="Delete this event forever?">Delete event</ConfirmButton>
         </form>
       </div>
     </>
@@ -430,12 +444,20 @@ function Games({ bundle }: { bundle: Bundle }) {
         <div className="btn-row">
           <form action={makeSchedule}>
             <Auth e={event} />
-            <button className={`btn ${pool.length ? 'secondary' : ''}`}>{pool.length ? 'Remake schedule' : 'Make schedule'}</button>
+            {pool.length ? (
+              <ConfirmButton className="btn secondary" message="Remake the schedule? This erases ALL games and scores, including playoffs.">Remake schedule</ConfirmButton>
+            ) : (
+              <button className="btn">Make schedule</button>
+            )}
           </form>
           {pool.length > 0 && event.playoff_teams > 1 && (
             <form action={startPlayoffs}>
               <Auth e={event} />
-              <button className={`btn ${playoff.length ? 'secondary' : 'navy'}`}>{playoff.length ? 'Restart playoffs' : 'Start playoffs'}</button>
+              {playoff.length ? (
+                <ConfirmButton className="btn secondary" message="Restart the playoffs? This erases all playoff games and scores.">Restart playoffs</ConfirmButton>
+              ) : (
+                <ConfirmButton className="btn navy" message="Start playoffs now? Seeds come from the current standings.">Start playoffs</ConfirmButton>
+              )}
             </form>
           )}
           {playoff.length > 0 && next && !done && (
@@ -610,6 +632,22 @@ function Settings({ bundle }: { bundle: Bundle }) {
             </div>
           )}
           {event.kind === 'pledge' && <label>Distance unit<input name="pledge_unit" defaultValue={event.pledge_unit} /></label>}
+          <label>
+            Live stream link <span className="hint">YouTube, Facebook Live, or Twitch. YouTube and Twitch play right on the page.</span>
+            <input name="stream_url" defaultValue={event.stream_url} placeholder="https://youtube.com/live/..." />
+          </label>
+          <label>
+            Fundraising goal ($) <span className="hint">Shows a progress bar on the public page.</span>
+            <input name="fundraising_goal" inputMode="decimal" defaultValue={dollars(event.fundraising_goal)} />
+          </label>
+          <label>
+            Sponsors <span className="hint">One per line: Name, or Name | https://their-site.com</span>
+            <textarea name="sponsors" defaultValue={event.sponsors} rows={4} />
+          </label>
+          <label>
+            Waiver <span className="hint">If filled in, everyone must check “I agree” to sign up. Have a professional review the wording.</span>
+            <textarea name="waiver_text" defaultValue={event.waiver_text} rows={6} placeholder="I understand hockey involves risk of injury... I agree this event may be photographed and live streamed..." />
+          </label>
           <button className="btn">Save settings</button>
         </form>
       </div>

@@ -180,3 +180,5 @@ tr.top td { font-weight: 700; }
 .inline { display: inline; }
 details summary { cursor: pointer; font-weight: 700; }
 .champion { text-align: center; padding: 18px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: 1.2rem; margin-bottom: 16px; }
+
+.waiver { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--paper); display: grid; gap: 10px; }
