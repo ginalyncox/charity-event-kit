@@ -1,6 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
+import { notifyEvent } from './push';
 import { revalidatePath } from 'next/cache';
 import { one, query } from './db';
 import { getBundle, getEventBySlug } from './data';
@@ -383,9 +385,9 @@ export async function updateSettings(fd: FormData) {
       fd.has('fundraising_goal') ? toCents(fd.get('fundraising_goal')) : event.fundraising_goal,
       fd.has('sponsors') ? text(fd.get('sponsors'), 3000) : event.sponsors,
       fd.has('waiver_text') ? text(fd.get('waiver_text'), 8000) : event.waiver_text,
+      fd.has('start_at') ? (/^\d{4}-\d{2}-\d{2}$/.test(text(fd.get('start_at'), 10)) ? text(fd.get('start_at'), 10) : '') : event.start_at,
       fd.has('pledges_form') ? fd.get('pledges_open') === 'on' : event.pledges_open,
       fd.has('jersey_sizes') ? text(fd.get('jersey_sizes'), 200) : event.jersey_sizes,
-      fd.has('start_at') ? (/^\d{4}-\d{2}-\d{2}$/.test(text(fd.get('start_at'), 10)) ? text(fd.get('start_at'), 10) : '') : event.start_at,
     ],
   );
   refresh(event);
@@ -529,13 +531,46 @@ export async function setLiveScore(slug: string, key: string, gameId: number, ho
   const event = await organizerEventFor(slug, key);
   const h = Math.max(0, Math.min(999, Math.round(Number(home) || 0)));
   const a = Math.max(0, Math.min(999, Math.round(Number(away) || 0)));
+  const before = await gameWithNames(event.id, Math.round(Number(gameId)));
   await query(
     `UPDATE games SET home_score=$1, away_score=$2, status = CASE WHEN status='final' THEN 'final' ELSE 'live' END
      WHERE id=$3 AND event_id=$4`,
     [h, a, Math.round(Number(gameId)), event.id],
   );
+  // Goal alerts go out after the response, so tapping + stays fast.
+  if (before && before.status !== 'final') {
+    const scorer = h > (before.home_score ?? 0) ? before.home : a > (before.away_score ?? 0) ? before.away : null;
+    if (scorer) {
+      after(() =>
+        notifyEvent(event.id, [scorer.id], {
+          title: `🚨 Goal! ${scorer.name}`,
+          body: `${before.home.name} ${h} – ${a} ${before.away.name}`,
+          url: `/e/${event.slug}`,
+          tag: `game-${before.id}`,
+        }),
+      );
+    }
+  }
   refresh(event);
   return { ok: true };
+}
+
+async function gameWithNames(eventId: number, gameId: number) {
+  const g = await one<any>(
+    `SELECT g.id, g.status, g.home_score, g.away_score, g.home_team_id, g.away_team_id, h.name AS hname, a.name AS aname
+     FROM games g LEFT JOIN teams h ON h.id = g.home_team_id LEFT JOIN teams a ON a.id = g.away_team_id
+     WHERE g.id = $1 AND g.event_id = $2`,
+    [gameId, eventId],
+  );
+  if (!g) return null;
+  return {
+    id: Number(g.id),
+    status: g.status as string,
+    home_score: g.home_score === null ? null : Number(g.home_score),
+    away_score: g.away_score === null ? null : Number(g.away_score),
+    home: { id: Number(g.home_team_id), name: String(g.hname ?? 'TBD') },
+    away: { id: Number(g.away_team_id), name: String(g.aname ?? 'TBD') },
+  };
 }
 
 export async function setGameStatus(slug: string, key: string, gameId: number, status: 'scheduled' | 'live' | 'final') {
@@ -549,6 +584,17 @@ export async function setGameStatus(slug: string, key: string, gameId: number, s
      WHERE id=$2 AND event_id=$3`,
     [status, Math.round(Number(gameId)), event.id],
   );
+  const g = await gameWithNames(event.id, Math.round(Number(gameId)));
+  if (g && (status === 'live' || status === 'final')) {
+    after(() =>
+      notifyEvent(event.id, [g.home.id, g.away.id], {
+        title: status === 'live' ? `🏒 Game on: ${g.home.name} vs ${g.away.name}` : `Final: ${g.home.name} ${g.home_score} – ${g.away_score} ${g.away.name}`,
+        body: status === 'live' ? `${event.name} — follow along live.` : event.name,
+        url: `/e/${event.slug}`,
+        tag: `game-${g.id}`,
+      }),
+    );
+  }
   refresh(event);
   return { ok: true };
 }

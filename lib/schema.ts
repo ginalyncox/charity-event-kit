@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '6';
+export const SCHEMA_VERSION = '7';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -217,4 +217,7 @@ export const SCHEMA: string[] = [
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS push_subs_event_idx ON push_subs(event_id)`,
+  // v7: a phone can follow several events
+  `ALTER TABLE push_subs DROP CONSTRAINT IF EXISTS push_subs_pkey`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS push_subs_endpoint_event_idx ON push_subs(endpoint, event_id)`,
 ];

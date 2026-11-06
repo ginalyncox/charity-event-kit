@@ -8,6 +8,7 @@ import { feeLabel } from '@/lib/format';
 import { currentUser } from '@/lib/auth';
 import Link from 'next/link';
 import AutoRefresh from '@/app/AutoRefresh';
+import AlertsButton from '@/app/AlertsButton';
 import StreamBox from '@/app/StreamBox';
 import { money } from '@/lib/format';
 import { parseSponsors } from '@/lib/sponsors';
@@ -343,6 +344,10 @@ export default async function EventPage({ params, searchParams }: Props) {
           </div>
         )}
       </section>
+
+      {event.kind === 'bracket' && process.env.VAPID_PUBLIC_KEY && (
+        <AlertsButton slug={event.slug} teams={bundle.teams.map((t) => ({ id: t.id, name: t.name }))} publicKey={process.env.VAPID_PUBLIC_KEY} />
+      )}
 
       {event.kind === 'bracket' && (
         <section style={{ marginTop: 8 }}>

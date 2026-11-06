@@ -3,20 +3,23 @@ import Link from 'next/link';
 import './globals.css';
 import { currentUser } from '@/lib/auth';
 import { logOut } from '@/lib/auth-actions';
+import SwRegister from './SwRegister';
 
 export const metadata: Metadata = {
   title: { default: 'Charity Event Kit', template: '%s · Charity Event Kit' },
+  appleWebApp: { capable: true, title: 'Event Kit', statusBarStyle: 'default' },
   description:
     'Sign-ups, fair teams, brackets, leaderboards, and pledge tracking for charity tournaments, rides, and walks. A tool by Gina Makes.',
 };
 
-export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#d9481f' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser();
   return (
     <html lang="en">
       <body>
+        <SwRegister />
         <header className="site-header">
           <div className="wrap">
             <Link href="/" className="brand" aria-label="Charity Event Kit home">

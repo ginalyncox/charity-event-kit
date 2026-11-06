@@ -36,7 +36,27 @@ Charity Event Kit never holds money. Organizers paste their own payment link
   that link can manage the event, so don't post it publicly.
 - Passwords are hashed with scrypt; sessions are httpOnly cookies (30 days).
 
-Not built yet: password reset by email, email verification, login rate limits.
+## Features
+
+- **Events:** bracket, leaderboard, and pledge types; copy last year's event in one tap; co-organizers.
+- **Sign-ups:** solo or whole team, team choice (like branch of service), positions, skill, jersey size and number, waiver, spam guards.
+- **Game day:** big-button scorekeeper, live/final games, auto-updating pages, TV scoreboard with QR code, live stream embeds.
+- **Fundraising:** event goal, team and personal pages with their own pay links, pledge per goal, silent auction, sponsors.
+- **Organizer tools:** roster download, check-in, message everyone, volunteer shifts, awards voting, printable impact report.
+- **Players:** My events, edit or cancel sign-up, add to calendar, history and badges, game alerts.
+- **Accounts:** email + password, password reset (needs email set up), login limits, delete my account.
+- **Installable app:** home-screen app with push alerts for game starts, goals, and finals.
+
+## Settings (Vercel environment variables)
+
+| Name | What it does |
+|---|---|
+| `DATABASE_URL` | Neon Postgres connection (required) |
+| `RESEND_API_KEY`, `MAIL_FROM` | Turns on password reset and organizer messages |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Turns on push alerts |
+| `SITE_URL` | Optional: the public address used in emails |
+
+Not built yet: email verification.
 
 ## Run locally
 
