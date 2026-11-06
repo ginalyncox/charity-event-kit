@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getBundle, getEventBySlug } from '@/lib/data';
-import { makeGoalPledge, registerSolo, registerTeam } from '@/lib/actions';
+import { castVote, makeGoalPledge, registerSolo, registerTeam, volunteer } from '@/lib/actions';
+import { getAwards, getShifts } from '@/lib/extras';
 import { pledgeOwed, pledgeTotals } from '@/lib/pledges';
 import { feeLabel } from '@/lib/format';
 import { currentUser } from '@/lib/auth';
@@ -117,6 +118,7 @@ export default async function EventPage({ params, searchParams }: Props) {
   if (!event) notFound();
   const bundle = await getBundle(event);
   const user = await currentUser();
+  const [shifts, awards] = await Promise.all([getShifts(event.id), getAwards(event.id)]);
   const mine = user ? bundle.players.filter((p) => p.user_id === user.id) : [];
   const fees = feeLabel(event);
   const raised = totalRaised(bundle);
@@ -382,6 +384,62 @@ export default async function EventPage({ params, searchParams }: Props) {
       {event.pledges_open && event.kind === 'bracket' && <PledgePerGoal bundle={bundle} userName={user?.name ?? ''} userEmail={user?.email ?? ''} done={!!sp.pledged} />}
 
       {!isPledge && <TeamMoneyRace bundle={bundle} />}
+
+      {awards.some((a) => a.open || a.published) && (
+        <section id="awards" className="card">
+          <h2>🏅 Awards</h2>
+          {sp.vote && <div className="notice info">{sp.vote}</div>}
+          {awards.filter((a) => a.published && a.tally.length).map((a) => (
+            <p key={`w${a.id}`}><b>{a.title}:</b> 🏆 {a.tally[0].choice}</p>
+          ))}
+          {awards.filter((a) => a.open).map((a) => {
+            const options = a.choice_type === 'team' ? bundle.teams.map((t) => t.name) : [...new Set(bundle.players.map((p) => p.name))].sort();
+            return (
+              <form key={a.id} action={castVote} className="btn-row" style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                <input type="hidden" name="slug" value={event.slug} />
+                <input type="hidden" name="award_id" value={a.id} />
+                <b style={{ minWidth: 140 }}>{a.title}</b>
+                <select name="choice" defaultValue="" aria-label={`Vote for ${a.title}`} style={{ flex: 1, minWidth: 160 }}>
+                  <option value="">Choose…</option>
+                  {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <button className="btn small">Vote</button>
+              </form>
+            );
+          })}
+        </section>
+      )}
+
+      {shifts.length > 0 && (
+        <section id="volunteer" className="card">
+          <h2>🙋 Volunteer</h2>
+          <p className="muted">Help make the day happen. Pick a shift with open spots.</p>
+          {sp.vol && <div className="notice info">{sp.vol}</div>}
+          {shifts.map((s2) => {
+            const left = s2.slots - s2.signups.length;
+            return (
+              <form key={s2.id} action={volunteer} className="btn-row" style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                <input type="hidden" name="slug" value={event.slug} />
+                <input type="hidden" name="shift_id" value={s2.id} />
+                <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+                  <input name="website" tabIndex={-1} autoComplete="off" />
+                </div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <b>{s2.role}</b>
+                  <div className="small muted">{s2.when_text}{s2.when_text ? ' · ' : ''}{left > 0 ? `${left} of ${s2.slots} spots open` : 'Full'}</div>
+                </div>
+                {left > 0 && (
+                  <>
+                    <input name="name" placeholder="Your name" required defaultValue={user?.name ?? ''} aria-label="Your name" style={{ width: 150 }} />
+                    <input name="email" type="email" placeholder="Email" defaultValue={user?.email ?? ''} aria-label="Your email" style={{ width: 170 }} />
+                    <button className="btn small">Sign up</button>
+                  </>
+                )}
+              </form>
+            );
+          })}
+        </section>
+      )}
 
       <section style={{ marginTop: 8 }}>
         <h2>Teams</h2>

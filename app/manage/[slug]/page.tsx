@@ -8,7 +8,12 @@ import { query } from '@/lib/db';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import {
   addAuctionItem,
+  addAward,
   addCoOrganizer,
+  addShift,
+  awardAction,
+  removeShift,
+  removeVolunteer,
   auctionItemAction,
   removePledge,
   togglePledgePaid,
@@ -42,6 +47,7 @@ import { champion, nextPlayoffRound } from '@/lib/bracket';
 import { money } from '@/lib/format';
 import { mailConfigured } from '@/lib/mail';
 import { nextBid, pledgeOwed, pledgeTotals } from '@/lib/pledges';
+import { getAwards, getShifts, type Award, type Shift } from '@/lib/extras';
 import ConfirmButton from '@/app/ConfirmButton';
 import type { Bundle, EventRow } from '@/lib/types';
 import {
@@ -108,6 +114,8 @@ export default async function ManagePage({ params, searchParams }: Props) {
     resultsTab,
     { id: 'money', label: 'Fundraising' },
     { id: 'auction', label: 'Auction' },
+    { id: 'volunteers', label: 'Volunteers' },
+    { id: 'awards', label: 'Awards' },
     { id: 'checkin', label: 'Check-in' },
     { id: 'message', label: 'Message' },
     { id: 'settings', label: 'Settings' },
@@ -151,6 +159,8 @@ export default async function ManagePage({ params, searchParams }: Props) {
       {tab === 'checkin' && <CheckIn bundle={bundle} q={sp.q ?? ''} />}
       {tab === 'money' && <Fundraising bundle={bundle} />}
       {tab === 'auction' && <Auction bundle={bundle} />}
+      {tab === 'volunteers' && <Volunteers event={event} shifts={await getShifts(event.id)} />}
+      {tab === 'awards' && <Awards event={event} awards={await getAwards(event.id)} />}
       {tab === 'message' && <Message bundle={bundle} />}
     </>
   );
@@ -175,6 +185,7 @@ function Overview({ bundle, publicUrl }: { bundle: Bundle; publicUrl: string }) 
         <p className="copy"><a href={publicUrl}>{publicUrl}</a></p>
         <p className="small muted">Post it, text it, or print it. This page is safe to share.</p>
         <p className="small"><Link href={`${publicUrl}/tv`} target="_blank">Open the TV scoreboard</Link> — show it on a big screen at the event.</p>
+        <p className="small"><Link href={`/manage/${event.slug}/report?key=${event.admin_key}`}>Impact report</Link> — a one-page summary to print or save as PDF for your board and sponsors.</p>
       </div>
       <div className="stats card">
         <div className="stat"><span className="small muted">People signed up</span><b>{players.length}</b></div>
@@ -1076,6 +1087,117 @@ function Auction({ bundle }: { bundle: Bundle }) {
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+/* ---------------- Volunteers ---------------- */
+
+function Volunteers({ event, shifts }: { event: EventRow; shifts: Shift[] }) {
+  const filled = shifts.reduce((n, s) => n + s.signups.length, 0);
+  const total = shifts.reduce((n, s) => n + s.slots, 0);
+  return (
+    <>
+      <div className="card">
+        <h2>Add a volunteer shift</h2>
+        <form action={addShift} className="stack">
+          <Auth e={event} />
+          <div className="row-2">
+            <label>Job<input name="role" required maxLength={80} placeholder="Scorekeeper" /></label>
+            <label>When<input name="when_text" maxLength={80} placeholder="Sat 8 AM – noon" /></label>
+          </div>
+          <label>People needed<input name="slots" inputMode="numeric" defaultValue="2" /></label>
+          <button className="btn">Add shift</button>
+        </form>
+      </div>
+      <div className="card">
+        <h2>Shifts ({filled} / {total} filled)</h2>
+        {shifts.map((s) => (
+          <div key={s.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+            <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+              <div><b>{s.role}</b> <span className="small muted">{s.when_text} · {s.signups.length}/{s.slots}</span></div>
+              <form action={removeShift}>
+                <Auth e={event} />
+                <input type="hidden" name="shift_id" value={s.id} />
+                <ConfirmButton className="btn small danger" message={`Remove the ${s.role} shift and its volunteers?`}>Remove shift</ConfirmButton>
+              </form>
+            </div>
+            {s.signups.map((v) => (
+              <form key={v.id} action={removeVolunteer} className="btn-row small" style={{ paddingLeft: 12, marginTop: 4 }}>
+                <Auth e={event} />
+                <input type="hidden" name="signup_id" value={v.id} />
+                <span>{v.name} {v.email && <a href={`mailto:${v.email}`}>{v.email}</a>}</span>
+                <button className="btn small secondary">Remove</button>
+              </form>
+            ))}
+          </div>
+        ))}
+        {!shifts.length && <p className="muted">No shifts yet.</p>}
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Awards ---------------- */
+
+function Awards({ event, awards }: { event: EventRow; awards: Award[] }) {
+  return (
+    <>
+      <div className="card">
+        <h2>Add an award</h2>
+        <form action={addAward} className="btn-row">
+          <Auth e={event} />
+          <input name="title" required maxLength={80} placeholder="MVP, Fan favorite…" aria-label="Award name" style={{ flex: 1, minWidth: 180 }} />
+          <select name="choice_type" defaultValue="player" aria-label="Vote for" style={{ width: 'auto' }}>
+            <option value="player">Vote for a player</option>
+            <option value="team">Vote for a team</option>
+          </select>
+          <button className="btn secondary">Add award</button>
+        </form>
+        <p className="small muted" style={{ marginTop: 8 }}>
+          Anyone on the event page can vote, once per account (or once per phone without an account). Voting again changes
+          their vote. Results stay private until you publish them.
+        </p>
+      </div>
+      {awards.map((a) => (
+        <div key={a.id} className="card">
+          <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0 }}>
+              {a.title} <span className={`pill ${a.open ? 'good' : ''}`}>{a.open ? 'Voting open' : 'Voting closed'}</span>{' '}
+              {a.published && <span className="pill accent">Published</span>}
+            </h3>
+            <div className="btn-row">
+              {(['open', 'publish', 'delete'] as const).map((op) => (
+                <form key={op} action={awardAction}>
+                  <Auth e={event} />
+                  <input type="hidden" name="award_id" value={a.id} />
+                  <input type="hidden" name="op" value={op} />
+                  {op === 'delete' ? (
+                    <ConfirmButton className="btn small danger" message={`Delete the ${a.title} award and its votes?`}>Delete</ConfirmButton>
+                  ) : (
+                    <button className="btn small secondary">
+                      {op === 'open' ? (a.open ? 'Close voting' : 'Reopen voting') : a.published ? 'Unpublish' : 'Publish winner'}
+                    </button>
+                  )}
+                </form>
+              ))}
+            </div>
+          </div>
+          {a.tally.length ? (
+            <table style={{ marginTop: 8 }}>
+              <tbody>
+                {a.tally.slice(0, 10).map((t, i) => (
+                  <tr key={t.choice} className={i === 0 ? 'top' : undefined}>
+                    <td>{i === 0 ? '🏆' : i + 1}</td><td>{t.choice}</td><td className="num">{t.votes} vote{t.votes === 1 ? '' : 's'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="small muted" style={{ marginTop: 8 }}>No votes yet.</p>
+          )}
+        </div>
+      ))}
     </>
   );
 }

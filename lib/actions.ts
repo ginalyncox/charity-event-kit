@@ -854,3 +854,116 @@ export async function placeBid(fd: FormData) {
   revalidatePath(`/e/${slug}/auction`);
   back(ok ? 'Bid placed — you’re the high bidder!' : 'Someone bid higher, or your bid is below the minimum. Try again.');
 }
+
+/* ---------- volunteers ---------- */
+
+export async function addShift(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const role = text(fd.get('role'), 80);
+  if (role) {
+    await query('INSERT INTO shifts (event_id, role, when_text, slots) VALUES ($1,$2,$3,$4)', [
+      event.id, role, text(fd.get('when_text'), 80), toInt(fd.get('slots'), 1, 1, 200),
+    ]);
+  }
+  refresh(event);
+  redirect(manageUrl(event, role ? `Added ${role}` : undefined, 'volunteers'));
+}
+
+export async function removeShift(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('DELETE FROM shifts WHERE id=$1 AND event_id=$2', [toInt(fd.get('shift_id'), 0, 0, 1e9), event.id]);
+  refresh(event);
+  redirect(manageUrl(event, 'Shift removed', 'volunteers'));
+}
+
+export async function removeVolunteer(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('DELETE FROM shift_signups s USING shifts h WHERE s.id=$1 AND h.id = s.shift_id AND h.event_id=$2', [
+    toInt(fd.get('signup_id'), 0, 0, 1e9), event.id,
+  ]);
+  refresh(event);
+  redirect(manageUrl(event, 'Volunteer removed', 'volunteers'));
+}
+
+export async function volunteer(fd: FormData) {
+  const event = await getEventBySlug(text(fd.get('slug'), 100));
+  if (!event) throw new Error('Event not found.');
+  const back = (m: string) => redirect(`/e/${event.slug}?vol=${encodeURIComponent(m)}#volunteer`);
+  if (text(fd.get('website'), 200)) back('Thanks for volunteering!');
+  if (!(await allow(`vol:${event.id}:${await clientIp()}`, 15, 30))) back('Too many sign-ups from this connection. Try again soon.');
+  const user = await currentUser();
+  const name = text(fd.get('name'), 80) || user?.name || '';
+  if (!name) back('Please add your name.');
+  const shiftId = toInt(fd.get('shift_id'), 0, 0, 1e9);
+  // Only adds the volunteer if the shift still has room.
+  const ok = await one<{ id: number }>(
+    `INSERT INTO shift_signups (shift_id, name, email, user_id)
+     SELECT h.id, $2, $3, $4 FROM shifts h
+     WHERE h.id = $1 AND h.event_id = $5 AND (SELECT COUNT(*) FROM shift_signups WHERE shift_id = h.id) < h.slots
+     RETURNING id`,
+    [shiftId, name, normalizeEmail(text(fd.get('email'), 200) || user?.email || ''), user?.id ?? null, event.id],
+  );
+  refresh(event);
+  back(ok ? `Thanks, ${name}! You’re signed up to volunteer.` : 'Sorry, that shift just filled up. Try another one.');
+}
+
+/* ---------- awards voting ---------- */
+
+export async function addAward(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const title = text(fd.get('title'), 80);
+  if (title) {
+    await query('INSERT INTO awards (event_id, title, choice_type) VALUES ($1,$2,$3)', [
+      event.id, title, text(fd.get('choice_type'), 10) === 'team' ? 'team' : 'player',
+    ]);
+  }
+  refresh(event);
+  redirect(manageUrl(event, title ? `Added ${title}` : undefined, 'awards'));
+}
+
+export async function awardAction(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const id = toInt(fd.get('award_id'), 0, 0, 1e9);
+  const op = text(fd.get('op'), 10);
+  if (op === 'open') await query('UPDATE awards SET open = NOT open WHERE id=$1 AND event_id=$2', [id, event.id]);
+  if (op === 'publish') await query('UPDATE awards SET published = NOT published WHERE id=$1 AND event_id=$2', [id, event.id]);
+  if (op === 'delete') await query('DELETE FROM awards WHERE id=$1 AND event_id=$2', [id, event.id]);
+  refresh(event);
+  redirect(manageUrl(event, undefined, 'awards'));
+}
+
+export async function castVote(fd: FormData) {
+  const event = await getEventBySlug(text(fd.get('slug'), 100));
+  if (!event) throw new Error('Event not found.');
+  const awardId = toInt(fd.get('award_id'), 0, 0, 1e9);
+  const choice = text(fd.get('choice'), 80);
+  const back = (m: string) => redirect(`/e/${event.slug}?vote=${encodeURIComponent(m)}#awards`);
+  if (!choice) back('Pick someone to vote for.');
+  if (!(await allow(`vote:${await clientIp()}`, 60, 60))) back('Too many votes from this connection.');
+  const award = await one<{ id: number; choice_type: string }>('SELECT id, choice_type FROM awards WHERE id=$1 AND event_id=$2 AND open', [awardId, event.id]);
+  if (!award) back('Voting is closed for that award.');
+  // Only real players or teams in this event can get votes.
+  const real = await one(
+    award!.choice_type === 'team'
+      ? 'SELECT 1 FROM teams WHERE event_id=$1 AND name=$2'
+      : 'SELECT 1 FROM players WHERE event_id=$1 AND name=$2',
+    [event.id, choice],
+  );
+  if (!real) back('Please pick from the list.');
+  // One vote per account, or per browser for people without an account. Voting again changes your vote.
+  const user = await currentUser();
+  const { cookies } = await import('next/headers');
+  const jar = await cookies();
+  let voter = user ? `u:${user.id}` : jar.get('cek_voter')?.value ?? '';
+  if (!voter) {
+    voter = `b:${randomToken(12)}`;
+    jar.set('cek_voter', voter, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 365 });
+  }
+  await query(
+    `INSERT INTO award_votes (award_id, voter, choice) VALUES ($1,$2,$3)
+     ON CONFLICT (award_id, voter) DO UPDATE SET choice = EXCLUDED.choice, created_at = now()`,
+    [awardId, voter.slice(0, 40), choice],
+  );
+  refresh(event);
+  back('Vote counted — thanks!');
+}

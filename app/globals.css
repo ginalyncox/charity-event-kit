@@ -218,3 +218,10 @@ details summary { cursor: pointer; font-weight: 700; }
 .thermo span { display: block; height: 100%; background: linear-gradient(90deg, var(--good), #34c77b); }
 .sponsors { display: flex; flex-wrap: wrap; gap: 8px; }
 .sponsors a, .sponsors span { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; color: var(--ink); background: var(--card); font-weight: 600; font-size: 14px; }
+
+@media print {
+  .site-header, .site-footer, .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+  .card { box-shadow: none; break-inside: avoid; }
+  main { padding: 0; }
+}

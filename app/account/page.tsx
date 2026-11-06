@@ -34,6 +34,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
     [user.id],
   );
 
+  const vol = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM shift_signups WHERE user_id = $1', [user.id]);
   const ownedBundles = await Promise.all(owned.map(async (r) => getBundle((await getEventBySlug(r.slug))!)));
   const playingBundles = await Promise.all(playing.map(async (r) => getBundle((await getEventBySlug(r.slug))!)));
 
@@ -46,6 +47,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       </div>
       <AutoRefresh seconds={30} />
       {sp.msg && <div className="notice good" role="status">{sp.msg}</div>}
+
+      <History bundles={playingBundles} userId={user.id} volunteered={Number(vol[0]?.n ?? 0)} organized={ownedBundles.length} />
 
       <section>
         <h2>Playing in</h2>
@@ -238,5 +241,43 @@ function PlayingCard({ bundle, userId }: { bundle: Bundle; userId: number }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Lifetime stats and badges across every event. */
+function History({ bundles, userId, volunteered, organized }: { bundles: Bundle[]; userId: number; volunteered: number; organized: number }) {
+  const mine = bundles.flatMap((b) => b.players.filter((p) => p.user_id === userId).map((p) => ({ b, p })));
+  const events = new Set(mine.map((x) => x.b.event.id)).size;
+  const raised = mine.reduce((s, x) => s + x.p.raised, 0);
+  const champs = mine.filter((x) => x.p.team_id !== null && champion(x.b.games) === x.p.team_id).length;
+  const captain = bundles.some((b) => b.teams.some((t) => t.captain_user_id === userId));
+  const honoring = mine.some((x) => x.p.honoring);
+  const badges = [
+    events >= 1 && { icon: '🎟️', label: 'First event' },
+    events >= 3 && { icon: '🔁', label: `${events}-event regular` },
+    raised >= 10000 && { icon: '💯', label: '$100 club' },
+    raised >= 50000 && { icon: '⭐', label: '$500 club' },
+    raised >= 100000 && { icon: '🌟', label: '$1,000 club' },
+    champs > 0 && { icon: '🏆', label: champs > 1 ? `${champs}× champion` : 'Champion' },
+    captain && { icon: '🧢', label: 'Team captain' },
+    volunteered > 0 && { icon: '🙋', label: 'Volunteer' },
+    organized > 0 && { icon: '📋', label: 'Organizer' },
+    honoring && { icon: '🎖️', label: 'Played in honor' },
+  ].filter(Boolean) as { icon: string; label: string }[];
+  if (!events && !organized && !volunteered) return null;
+  return (
+    <section className="card">
+      <h2>My history</h2>
+      <div className="stats">
+        <div className="stat"><span className="small muted">Events</span><b>{events}</b></div>
+        <div className="stat"><span className="small muted">Raised</span><b>{money(raised)}</b></div>
+        {volunteered > 0 && <div className="stat"><span className="small muted">Volunteer shifts</span><b>{volunteered}</b></div>}
+      </div>
+      {badges.length > 0 && (
+        <div className="btn-row" style={{ marginTop: 12 }}>
+          {badges.map((b) => <span key={b.label} className="pill accent" style={{ fontSize: 13 }}>{b.icon} {b.label}</span>)}
+        </div>
+      )}
+    </section>
   );
 }
