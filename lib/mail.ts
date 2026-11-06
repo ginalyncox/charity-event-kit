@@ -9,7 +9,7 @@ export function mailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM);
 }
 
-export async function sendMail(to: string, subject: string, text: string): Promise<boolean> {
+export async function sendMail(to: string, subject: string, text: string, replyTo?: string): Promise<boolean> {
   if (!mailConfigured()) return false;
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -18,7 +18,7 @@ export async function sendMail(to: string, subject: string, text: string): Promi
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: process.env.MAIL_FROM, to: [to], subject, text }),
+      body: JSON.stringify({ from: process.env.MAIL_FROM, to: [to], subject, text, ...(replyTo ? { reply_to: replyTo } : {}) }),
     });
     return res.ok;
   } catch {

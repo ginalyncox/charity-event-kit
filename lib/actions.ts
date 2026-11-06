@@ -12,6 +12,7 @@ import type { EventRow } from './types';
 import { currentUser, normalizeEmail } from './auth';
 import { canManage } from './access';
 import { allow, clientIp } from './ratelimit';
+import { mailConfigured, sendMail } from './mail';
 
 /* ---------- helpers ---------- */
 
@@ -539,4 +540,42 @@ export async function setGameStatus(slug: string, key: string, gameId: number, s
   );
   refresh(event);
   return { ok: true };
+}
+
+/* ---------- organizer: check-in & messages ---------- */
+
+export async function toggleCheckIn(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('UPDATE players SET checked_in = NOT checked_in WHERE id=$1 AND event_id=$2', [toInt(fd.get('player_id'), 0, 0, 1e9), event.id]);
+  refresh(event);
+  const q = text(fd.get('q'), 80);
+  redirect(manageUrl(event, undefined, 'checkin') + (q ? `&q=${encodeURIComponent(q)}` : ''));
+}
+
+export async function messagePlayers(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const subject = text(fd.get('subject'), 150);
+  const body = text(fd.get('body'), 5000);
+  const who = text(fd.get('who'), 20);
+  if (!subject || !body) redirect(manageUrl(event, 'Add a subject and a message.', 'message'));
+  if (!mailConfigured()) redirect(manageUrl(event, 'Email sending isn’t switched on yet — use “Copy emails” below.', 'message'));
+  if (!(await allow(`msg:${event.id}`, 5, 60))) redirect(manageUrl(event, 'You can send up to 5 messages an hour.', 'message'));
+
+  const { players, teams } = await getBundle(event);
+  const pool = players.filter((p) =>
+    who === 'unpaid' ? !(p.is_solo ? p.paid : teams.find((t) => t.id === p.team_id)?.paid) : who === 'captains' ? false : true,
+  );
+  const emails = new Set<string>(pool.map((p) => p.email).filter((e) => e.includes('@')));
+  if (who !== 'unpaid') for (const t of teams) if (t.captain_email.includes('@')) emails.add(t.captain_email);
+  if (who === 'captains') {
+    emails.clear();
+    for (const t of teams) if (t.captain_email.includes('@')) emails.add(t.captain_email);
+  }
+
+  const footer = `\n\n—\nSent by the organizer of ${event.name} using Charity Event Kit by Gina Makes.${event.contact_email ? `\nQuestions? Reply to ${event.contact_email}.` : ''}`;
+  let sent = 0;
+  for (const email of [...emails].slice(0, 500)) {
+    if (await sendMail(email, `${event.name}: ${subject}`, body + footer, event.contact_email || undefined)) sent++;
+  }
+  redirect(manageUrl(event, `Message sent to ${sent} of ${emails.size} people`, 'message'));
 }

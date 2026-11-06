@@ -12,6 +12,8 @@ import {
   balanceAction,
   deleteEvent,
   makeSchedule,
+  messagePlayers,
+  toggleCheckIn,
   saveGameDetails,
   movePlayer,
   removePlayer,
@@ -29,6 +31,7 @@ import {
 import { rosterWarnings } from '@/lib/balance';
 import { champion, nextPlayoffRound } from '@/lib/bracket';
 import { money } from '@/lib/format';
+import { mailConfigured } from '@/lib/mail';
 import ConfirmButton from '@/app/ConfirmButton';
 import type { Bundle, EventRow } from '@/lib/types';
 import {
@@ -89,6 +92,8 @@ export default async function ManagePage({ params, searchParams }: Props) {
     { id: 'people', label: 'People & payments' },
     { id: 'teams', label: 'Teams' },
     resultsTab,
+    { id: 'checkin', label: 'Check-in' },
+    { id: 'message', label: 'Message' },
     { id: 'settings', label: 'Settings' },
   ];
   const tab = tabs.some((t) => t.id === sp.tab) ? sp.tab! : 'overview';
@@ -127,6 +132,8 @@ export default async function ManagePage({ params, searchParams }: Props) {
       {tab === 'games' && <Games bundle={bundle} />}
       {tab === 'results' && <Results bundle={bundle} />}
       {tab === 'settings' && <Settings bundle={bundle} />}
+      {tab === 'checkin' && <CheckIn bundle={bundle} q={sp.q ?? ''} />}
+      {tab === 'message' && <Message bundle={bundle} />}
     </>
   );
 }
@@ -229,6 +236,11 @@ function People({ bundle }: { bundle: Bundle }) {
         </div>
       )}
       <div className="card">
+        <h2>Download</h2>
+        <p className="small muted">Everyone’s name, email, team, payment, check-in, and waiver status as a spreadsheet (opens in Excel or Google Sheets).</p>
+        <a className="btn secondary" href={`/manage/${event.slug}/export?key=${event.admin_key}`}>Download roster (.csv)</a>
+      </div>
+      <div className="card">
         <h2>{event.kind === 'pledge' ? 'People' : 'Solo players'}</h2>
         {solo.length ? (
           <div className="table-wrap">
@@ -244,6 +256,9 @@ function People({ bundle }: { bundle: Bundle }) {
                       {p.position && <span className="small muted"> · {p.position}</span>}
                       {p.email && <div className="small"><a href={`mailto:${p.email}`}>{p.email}</a></div>}
                       {p.honoring && <div className="small muted">For {p.honoring}</div>}
+                      {event.waiver_text && (
+                        <div className="small">{p.waiver_agreed_at ? <span className="pill good">Waiver ✓</span> : <span className="pill warn">No waiver</span>}</div>
+                      )}
                     </td>
                     <td className="small">
                       {teams.find((t) => t.id === p.team_id)?.name ?? <span className="pill warn">Waiting</span>}
@@ -686,6 +701,107 @@ function Settings({ bundle }: { bundle: Bundle }) {
           </label>
           <button className="btn">Save settings</button>
         </form>
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Check-in ---------------- */
+
+function CheckIn({ bundle, q }: { bundle: Bundle; q: string }) {
+  const { event, players, teams } = bundle;
+  const needle = q.trim().toLowerCase();
+  const list = players
+    .filter((p) => !needle || p.name.toLowerCase().includes(needle) || (teams.find((t) => t.id === p.team_id)?.name ?? '').toLowerCase().includes(needle))
+    .sort((a, b) => Number(a.checked_in) - Number(b.checked_in) || a.name.localeCompare(b.name));
+  const done = players.filter((p) => p.checked_in).length;
+  return (
+    <>
+      <div className="stats card">
+        <div className="stat"><span className="small muted">Checked in</span><b>{done} / {players.length}</b></div>
+      </div>
+      <div className="card">
+        <form method="get" className="btn-row">
+          <input type="hidden" name="key" value={event.admin_key} />
+          <input type="hidden" name="tab" value="checkin" />
+          <input name="q" defaultValue={q} placeholder="Search name or team" aria-label="Search players" style={{ flex: 1, minWidth: 180 }} />
+          <button className="btn secondary">Search</button>
+        </form>
+      </div>
+      <div className="card">
+        {list.length ? (
+          list.map((p) => {
+            const t = teams.find((x) => x.id === p.team_id);
+            const paid = p.is_solo ? p.paid : Boolean(t?.paid);
+            return (
+              <form key={p.id} action={toggleCheckIn} className="btn-row" style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+                <Auth e={event} />
+                <input type="hidden" name="player_id" value={p.id} />
+                <input type="hidden" name="q" value={q} />
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <b>{p.name}</b>
+                  <div className="small muted">
+                    {t?.name ?? 'No team'}
+                    {' · '}
+                    {paid ? <span style={{ color: 'var(--good)' }}>Paid</span> : <span style={{ color: 'var(--warn)' }}>Not paid</span>}
+                    {event.waiver_text && <> · {p.waiver_agreed_at ? 'Waiver ✓' : <span style={{ color: 'var(--warn)' }}>No waiver</span>}</>}
+                  </div>
+                </div>
+                <button className={`btn ${p.checked_in ? 'secondary' : ''}`} style={{ minWidth: 130 }}>
+                  {p.checked_in ? '✓ Checked in' : 'Check in'}
+                </button>
+              </form>
+            );
+          })
+        ) : (
+          <p className="muted">No one matches “{q}”.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Message ---------------- */
+
+function Message({ bundle }: { bundle: Bundle }) {
+  const { event, players, teams } = bundle;
+  const emails = [...new Set([...players.map((p) => p.email), ...teams.map((t) => t.captain_email)].filter((e) => e.includes('@')))];
+  const ready = mailConfigured();
+  return (
+    <>
+      <div className="card">
+        <h2>Message everyone</h2>
+        {ready ? (
+          <form action={messagePlayers} className="stack">
+            <Auth e={event} />
+            <label>
+              Send to
+              <select name="who" defaultValue="all">
+                <option value="all">Everyone with an email ({emails.length})</option>
+                <option value="unpaid">People not marked paid</option>
+                <option value="captains">Team captains only</option>
+              </select>
+            </label>
+            <label>Subject<input name="subject" required maxLength={150} placeholder="Schedule is posted!" /></label>
+            <label>Message<textarea name="body" required maxLength={5000} rows={6} /></label>
+            <p className="small muted">Replies go to {event.contact_email || 'no one — add an organizer email in Settings'}.</p>
+            <button className="btn">Send message</button>
+          </form>
+        ) : (
+          <p className="muted small">
+            Sending from the app isn’t switched on yet. For now, copy the emails below into your own email (use BCC so people
+            don’t see each other’s addresses).
+          </p>
+        )}
+      </div>
+      <div className="card">
+        <h3>Copy emails</h3>
+        <textarea readOnly value={emails.join(', ')} rows={4} aria-label="All emails" />
+        {emails.length > 0 && (
+          <a className="btn secondary small" style={{ marginTop: 8 }} href={`mailto:?bcc=${encodeURIComponent(emails.join(','))}&subject=${encodeURIComponent(event.name)}`}>
+            Open in my email app (BCC)
+          </a>
+        )}
       </div>
     </>
   );
