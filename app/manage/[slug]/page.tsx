@@ -12,6 +12,7 @@ import {
   balanceAction,
   deleteEvent,
   makeSchedule,
+  saveGameDetails,
   movePlayer,
   removePlayer,
   removeTeam,
@@ -148,6 +149,7 @@ function Overview({ bundle, publicUrl }: { bundle: Bundle; publicUrl: string }) 
         <h2>Share this sign-up link</h2>
         <p className="copy"><a href={publicUrl}>{publicUrl}</a></p>
         <p className="small muted">Post it, text it, or print it. This page is safe to share.</p>
+        <p className="small"><Link href={`${publicUrl}/tv`} target="_blank">Open the TV scoreboard</Link> — show it on a big screen at the event.</p>
       </div>
       <div className="stats card">
         <div className="stat"><span className="small muted">People signed up</span><b>{players.length}</b></div>
@@ -423,6 +425,22 @@ function ScoreForm({ e, gameId, home, away }: { e: EventRow; gameId: number; hom
   );
 }
 
+function GameDetails({ e, game }: { e: EventRow; game: Bundle['games'][number] }) {
+  return (
+    <details style={{ margin: '0 0 8px' }}>
+      <summary className="small">Time, rink, and stream</summary>
+      <form action={saveGameDetails} className="row-2" style={{ marginTop: 8 }}>
+        <Auth e={e} />
+        <input type="hidden" name="game_id" value={game.id} />
+        <label className="small">Start time<input name="starts_at" defaultValue={game.starts_at} placeholder="Sat 9:00 AM" /></label>
+        <label className="small">Rink / field<input name="rink" defaultValue={game.rink} placeholder="Rink 2" /></label>
+        <label className="small">Stream link for this game<input name="stream_url" defaultValue={game.stream_url} placeholder="https://youtube.com/live/..." /></label>
+        <div style={{ alignSelf: 'end' }}><button className="btn small secondary">Save details</button></div>
+      </form>
+    </details>
+  );
+}
+
 function Games({ bundle }: { bundle: Bundle }) {
   const { event, games, teams } = bundle;
   const pool = groupRounds(games, 'pool');
@@ -434,6 +452,18 @@ function Games({ bundle }: { bundle: Bundle }) {
   return (
     <>
       <ChampionBanner bundle={bundle} />
+      {pool.length > 0 && (
+        <div className="card">
+          <h2>Game day</h2>
+          <div className="btn-row">
+            <Link className="btn" href={`/manage/${event.slug}/score?key=${event.admin_key}`}>Open scorekeeper (big buttons)</Link>
+            <Link className="btn secondary" href={`/e/${event.slug}/tv`} target="_blank">TV scoreboard</Link>
+          </div>
+          <p className="small muted" style={{ marginTop: 8 }}>
+            Open the TV scoreboard on a laptop hooked to a TV at the rink. It updates on its own.
+          </p>
+        </div>
+      )}
       <div className="card">
         <h2>Schedule</h2>
         <p className="small muted">
@@ -473,9 +503,12 @@ function Games({ bundle }: { bundle: Bundle }) {
         <div key={`p${round}`} className="card">
           <h3>{playoffRoundLabel(games, round)}</h3>
           {gs.map((g) => (
-            <GameLine key={g.id} game={g} teams={teams}>
-              <ScoreForm e={event} gameId={g.id} home={g.home_score} away={g.away_score} />
-            </GameLine>
+            <div key={g.id}>
+              <GameLine game={g} teams={teams}>
+                <ScoreForm e={event} gameId={g.id} home={g.home_score} away={g.away_score} />
+              </GameLine>
+              <GameDetails e={event} game={g} />
+            </div>
           ))}
         </div>
       ))}
@@ -491,9 +524,12 @@ function Games({ bundle }: { bundle: Bundle }) {
         <div key={round} className="card">
           <h3>Round {round}</h3>
           {gs.map((g) => (
-            <GameLine key={g.id} game={g} teams={teams}>
-              <ScoreForm e={event} gameId={g.id} home={g.home_score} away={g.away_score} />
-            </GameLine>
+            <div key={g.id}>
+              <GameLine game={g} teams={teams}>
+                <ScoreForm e={event} gameId={g.id} home={g.home_score} away={g.away_score} />
+              </GameLine>
+              <GameDetails e={event} game={g} />
+            </div>
           ))}
         </div>
       ))}

@@ -114,12 +114,30 @@ export function StandingsTable({ bundle }: { bundle: Bundle }) {
 
 export function GameLine({ game, teams, children }: { game: Game; teams: Team[]; children?: React.ReactNode }) {
   const w = winnerOf(game);
-  const played = game.home_score !== null && game.away_score !== null;
+  const hasScore = game.home_score !== null && game.away_score !== null;
+  const live = game.status === 'live';
   return (
     <div className="game">
       <span className={`team${w === game.home_team_id ? ' winner' : ''}`}>{teamName(teams, game.home_team_id)}</span>
-      {children ?? <span className="score">{played ? `${game.home_score} – ${game.away_score}` : 'vs'}</span>}
+      {children ?? (
+        <span className="score">
+          {hasScore && game.status !== 'scheduled' ? `${game.home_score} – ${game.away_score}` : 'vs'}
+        </span>
+      )}
       <span className={`team right${w === game.away_team_id ? ' winner' : ''}`}>{teamName(teams, game.away_team_id)}</span>
+      {(live || game.starts_at || game.rink || game.stream_url || game.status === 'final') && (
+        <span className="game-meta">
+          {live && <span className="pill live"><span className="live-dot" aria-hidden="true" />LIVE</span>}
+          {game.status === 'final' && <span className="pill">Final</span>}
+          {game.starts_at && <span>🕒 {game.starts_at}</span>}
+          {game.rink && <span>📍 {game.rink}</span>}
+          {game.stream_url && (
+            <a href={game.stream_url} target="_blank" rel="noopener noreferrer">
+              Watch this game
+            </a>
+          )}
+        </span>
+      )}
     </div>
   );
 }

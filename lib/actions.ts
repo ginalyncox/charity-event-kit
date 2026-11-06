@@ -402,7 +402,11 @@ export async function saveScore(fd: FormData) {
   const event = await organizerEvent(fd);
   const home = toNum(fd.get('home_score'));
   const away = toNum(fd.get('away_score'));
-  await query('UPDATE games SET home_score=$1, away_score=$2 WHERE id=$3 AND event_id=$4', [
+  // Both scores entered on the regular form = final. Cleared = back to scheduled.
+  await query(
+    `UPDATE games SET home_score=$1, away_score=$2,
+       status = CASE WHEN $1::int IS NOT NULL AND $2::int IS NOT NULL THEN 'final' ELSE 'scheduled' END
+     WHERE id=$3 AND event_id=$4`, [
     home === null ? null : Math.max(0, Math.round(home)),
     away === null ? null : Math.max(0, Math.round(away)),
     toInt(fd.get('game_id'), 0, 0, 1e9),
@@ -484,4 +488,55 @@ export async function deleteEvent(fd: FormData) {
   await query('DELETE FROM events WHERE id=$1', [event.id]);
   revalidatePath('/account');
   redirect('/account?msg=Event+deleted');
+}
+
+/* ---------- game day ---------- */
+
+export async function saveGameDetails(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('UPDATE games SET starts_at=$1, rink=$2, stream_url=$3 WHERE id=$4 AND event_id=$5', [
+    text(fd.get('starts_at'), 60),
+    text(fd.get('rink'), 60),
+    safeUrl(fd.get('stream_url')),
+    toInt(fd.get('game_id'), 0, 0, 1e9),
+    event.id,
+  ]);
+  refresh(event);
+  redirect(manageUrl(event, 'Game details saved', 'games'));
+}
+
+async function organizerEventFor(slug: string, key: string): Promise<EventRow> {
+  const fd = new FormData();
+  fd.set('slug', slug);
+  fd.set('key', key);
+  return organizerEvent(fd);
+}
+
+/** Big-button scoring: called straight from the scorekeeper screen. */
+export async function setLiveScore(slug: string, key: string, gameId: number, home: number, away: number) {
+  const event = await organizerEventFor(slug, key);
+  const h = Math.max(0, Math.min(999, Math.round(Number(home) || 0)));
+  const a = Math.max(0, Math.min(999, Math.round(Number(away) || 0)));
+  await query(
+    `UPDATE games SET home_score=$1, away_score=$2, status = CASE WHEN status='final' THEN 'final' ELSE 'live' END
+     WHERE id=$3 AND event_id=$4`,
+    [h, a, Math.round(Number(gameId)), event.id],
+  );
+  refresh(event);
+  return { ok: true };
+}
+
+export async function setGameStatus(slug: string, key: string, gameId: number, status: 'scheduled' | 'live' | 'final') {
+  const event = await organizerEventFor(slug, key);
+  const allowed = ['scheduled', 'live', 'final'];
+  if (!allowed.includes(status)) return { ok: false };
+  await query(
+    `UPDATE games SET status=$1,
+       home_score = CASE WHEN $1 <> 'scheduled' THEN COALESCE(home_score, 0) ELSE home_score END,
+       away_score = CASE WHEN $1 <> 'scheduled' THEN COALESCE(away_score, 0) ELSE away_score END
+     WHERE id=$2 AND event_id=$3`,
+    [status, Math.round(Number(gameId)), event.id],
+  );
+  refresh(event);
+  return { ok: true };
 }

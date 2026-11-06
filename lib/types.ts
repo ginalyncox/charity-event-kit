@@ -88,6 +88,7 @@ export type Game = {
   stream_url: string;
   starts_at: string;
   rink: string;
+  status: 'scheduled' | 'live' | 'final';
 };
 
 export type Bundle = {

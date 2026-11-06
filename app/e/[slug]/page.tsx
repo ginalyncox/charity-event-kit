@@ -5,7 +5,11 @@ import { registerSolo, registerTeam } from '@/lib/actions';
 import { feeLabel } from '@/lib/format';
 import { currentUser } from '@/lib/auth';
 import Link from 'next/link';
-import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable } from '@/app/ui';
+import AutoRefresh from '@/app/AutoRefresh';
+import StreamBox from '@/app/StreamBox';
+import { money } from '@/lib/format';
+import { parseSponsors } from '@/lib/sponsors';
+import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable, totalRaised } from '@/app/ui';
 
 /** Hidden spam trap plus the waiver checkbox, shared by both sign-up forms. */
 function FormExtras({ waiver, who }: { waiver: string; who: string }) {
@@ -55,6 +59,14 @@ export default async function EventPage({ params, searchParams }: Props) {
   const user = await currentUser();
   const mine = user ? bundle.players.filter((p) => p.user_id === user.id) : [];
   const fees = feeLabel(event);
+  const raised = totalRaised(bundle);
+  const sponsors = parseSponsors(event.sponsors);
+  // A game with its own stream that's live right now wins over the event stream.
+  const liveGame = bundle.games.find((g) => g.status === 'live' && g.stream_url);
+  const streamUrl = liveGame?.stream_url || event.stream_url;
+  const streamTitle = liveGame
+    ? `${bundle.teams.find((t) => t.id === liveGame.home_team_id)?.name ?? ''} vs ${bundle.teams.find((t) => t.id === liveGame.away_team_id)?.name ?? ''}`
+    : '';
   const isPledge = event.kind === 'pledge';
 
   // Team choices for solo players.
@@ -113,7 +125,25 @@ export default async function EventPage({ params, searchParams }: Props) {
         </p>
       )}
 
+      <AutoRefresh seconds={20} />
       <ChampionBanner bundle={bundle} />
+
+      {streamUrl && <StreamBox url={streamUrl} title={streamTitle} giveUrl={event.payment_url || undefined} />}
+
+      {event.fundraising_goal > 0 && (
+        <div className="card">
+          <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <span><b style={{ fontSize: '1.4rem' }}>{money(raised)}</b> raised of {money(event.fundraising_goal)}</span>
+            <span className="small muted">{Math.min(100, Math.round((raised / event.fundraising_goal) * 100))}% to goal</span>
+          </div>
+          <div className="thermo" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round((raised / event.fundraising_goal) * 100))} aria-label="Fundraising progress">
+            <span style={{ width: `${Math.min(100, (raised / event.fundraising_goal) * 100)}%` }} />
+          </div>
+          {event.payment_url && (
+            <a className="btn small" href={event.payment_url} target="_blank" rel="noopener noreferrer">Give to the cause</a>
+          )}
+        </div>
+      )}
 
       <section id="join">
         {!event.signups_open || sp.closed ? (
@@ -255,6 +285,21 @@ export default async function EventPage({ params, searchParams }: Props) {
         <h2>Teams</h2>
         <Rosters bundle={bundle} />
       </section>
+
+      {sponsors.length > 0 && (
+        <section className="card" style={{ marginTop: 16 }}>
+          <h2>Thank you to our sponsors</h2>
+          <div className="sponsors">
+            {sponsors.map((sp2) =>
+              sp2.url ? (
+                <a key={sp2.name} href={sp2.url} target="_blank" rel="noopener noreferrer sponsored">{sp2.name}</a>
+              ) : (
+                <span key={sp2.name}>{sp2.name}</span>
+              ),
+            )}
+          </div>
+        </section>
+      )}
 
       {event.contact_email && (
         <p className="small muted" style={{ marginTop: 24 }}>

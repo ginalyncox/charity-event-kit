@@ -63,7 +63,7 @@ export function standings(teamIds: number[], games: Game[]): Standing[] {
     teamIds.map((id) => [id, { teamId: id, played: 0, wins: 0, losses: 0, ties: 0, points: 0, scored: 0, allowed: 0, diff: 0 }]),
   );
   for (const g of games) {
-    if (g.stage !== 'pool' || g.home_score === null || g.away_score === null) continue;
+    if (g.stage !== 'pool' || g.status !== 'final' || g.home_score === null || g.away_score === null) continue;
     const h = map.get(g.home_team_id ?? -1);
     const a = map.get(g.away_team_id ?? -1);
     if (!h || !a) continue;
@@ -122,6 +122,7 @@ function bracketOrder(size: number): number[] {
 }
 
 export function winnerOf(g: Game): number | null {
+  if (g.status !== 'final') return null;
   if (g.home_score === null || g.away_score === null || g.home_score === g.away_score) return null;
   return g.home_score > g.away_score ? g.home_team_id : g.away_team_id;
 }
