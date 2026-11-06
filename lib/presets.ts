@@ -41,16 +41,17 @@ export const PRESETS: Preset[] = [
     label: 'Hockey',
     kind: 'bracket',
     teamMode: 'set',
-    teamSize: 12,
+    // Matches Iowa Salutes Heroes: 6 branch teams, 96 players, 3 games + 4-team playoff.
+    teamSize: 16,
     positions: [
-      { name: 'Goalie', perTeam: 1 },
-      { name: 'Defense', perTeam: 4 },
-      { name: 'Forward', perTeam: 7 },
+      { name: 'Goalie', perTeam: 2 },
+      { name: 'Defense', perTeam: 5 },
+      { name: 'Forward', perTeam: 9 },
     ],
     gamesPerTeam: 3,
     playoffTeams: 4,
     allowTeams: false,
-    teamChoices: 'Team 1, Team 2, Team 3, Team 4',
+    teamChoices: 'Army, Navy, Air Force, Marines, Coast Guard, Space Force',
   },
   { ...base, id: 'cornhole', label: 'Cornhole', kind: 'bracket', teamSize: 2, gamesPerTeam: 3, playoffTeams: 8 },
   {

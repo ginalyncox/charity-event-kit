@@ -114,6 +114,43 @@ export function balanceTeams(
     }
   }
 
+  // 3. Even out skill: swap two flexible players of the same position between
+  //    the strongest and weakest teams while it narrows the gap.
+  const movable = new Set(flexible.map((p) => p.id));
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const sumOf = (teamId: number) => tally.get(teamId)!.skill;
+  for (let pass = 0; pass < 200; pass++) {
+    const ids = teams.map((t) => t.id).filter((id) => tally.get(id)!.count > 0);
+    if (ids.length < 2) break;
+    ids.sort((a, b) => sumOf(b) - sumOf(a));
+    let best: { a: number; b: number; gain: number } | null = null;
+    for (let hi = 0; hi < ids.length && !best; hi++) {
+      for (let lo = ids.length - 1; lo > hi && !best; lo--) {
+        const gap = sumOf(ids[hi]) - sumOf(ids[lo]);
+        if (gap <= 1) continue;
+        const strong = [...assignments].filter(([pid, tid]) => tid === ids[hi] && movable.has(pid)).map(([pid]) => byId.get(pid)!);
+        const weak = [...assignments].filter(([pid, tid]) => tid === ids[lo] && movable.has(pid)).map(([pid]) => byId.get(pid)!);
+        for (const x of strong) {
+          for (const y of weak) {
+            const d = x.skill - y.skill;
+            if (d <= 0 || norm(x.position) !== norm(y.position)) continue;
+            const gain = gap - Math.abs(gap - 2 * d);
+            if (gain > 0 && (!best || gain > best.gain)) best = { a: x.id, b: y.id, gain };
+          }
+        }
+        if (best) {
+          const x = byId.get(best.a)!;
+          const y = byId.get(best.b)!;
+          assignments.set(x.id, ids[lo]);
+          assignments.set(y.id, ids[hi]);
+          tally.get(ids[hi])!.skill += y.skill - x.skill;
+          tally.get(ids[lo])!.skill += x.skill - y.skill;
+        }
+      }
+    }
+    if (!best) break;
+  }
+
   return { assignments, overflow };
 }
 
