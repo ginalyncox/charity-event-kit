@@ -7,7 +7,11 @@ import { currentUser } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import {
+  addAuctionItem,
   addCoOrganizer,
+  auctionItemAction,
+  removePledge,
+  togglePledgePaid,
   addTeam,
   copyEvent,
   removeCoOrganizer,
@@ -37,6 +41,7 @@ import { rosterWarnings } from '@/lib/balance';
 import { champion, nextPlayoffRound } from '@/lib/bracket';
 import { money } from '@/lib/format';
 import { mailConfigured } from '@/lib/mail';
+import { nextBid, pledgeOwed, pledgeTotals } from '@/lib/pledges';
 import ConfirmButton from '@/app/ConfirmButton';
 import type { Bundle, EventRow } from '@/lib/types';
 import {
@@ -102,6 +107,7 @@ export default async function ManagePage({ params, searchParams }: Props) {
     { id: 'teams', label: 'Teams' },
     resultsTab,
     { id: 'money', label: 'Fundraising' },
+    { id: 'auction', label: 'Auction' },
     { id: 'checkin', label: 'Check-in' },
     { id: 'message', label: 'Message' },
     { id: 'settings', label: 'Settings' },
@@ -144,6 +150,7 @@ export default async function ManagePage({ params, searchParams }: Props) {
       {tab === 'settings' && <Settings bundle={bundle} admins={admins} />}
       {tab === 'checkin' && <CheckIn bundle={bundle} q={sp.q ?? ''} />}
       {tab === 'money' && <Fundraising bundle={bundle} />}
+      {tab === 'auction' && <Auction bundle={bundle} />}
       {tab === 'message' && <Message bundle={bundle} />}
     </>
   );
@@ -243,6 +250,17 @@ function People({ bundle }: { bundle: Bundle }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {event.jersey_sizes && (
+        <div className="card">
+          <h2>Jersey order</h2>
+          <div className="btn-row">
+            {[...event.jersey_sizes.split(',').map((x) => x.trim()).filter(Boolean), ''].map((size) => {
+              const n = players.filter((p) => p.jersey_size === size).length;
+              return n || size ? <span key={size || 'none'} className="pill">{size || 'No size yet'}: {n}</span> : null;
+            })}
           </div>
         </div>
       )}
@@ -695,6 +713,17 @@ function Settings({ bundle, admins }: { bundle: Bundle; admins: { email: string;
             Sponsors <span className="hint">One per line: Name, or Name | https://their-site.com</span>
             <textarea name="sponsors" defaultValue={event.sponsors} rows={4} />
           </label>
+          <input type="hidden" name="pledges_form" value="1" />
+          {event.kind === 'bracket' && (
+            <label className="check">
+              <input type="checkbox" name="pledges_open" defaultChecked={event.pledges_open} />
+              Let fans pledge money per goal scored
+            </label>
+          )}
+          <label>
+            Jersey sizes <span className="hint">Comma-separated, like: YS, YM, S, M, L, XL, 2XL. Leave blank to skip jerseys.</span>
+            <input name="jersey_sizes" defaultValue={event.jersey_sizes} />
+          </label>
           <label>
             Waiver <span className="hint">If filled in, everyone must check “I agree” to sign up. Have a professional review the wording.</span>
             <textarea name="waiver_text" defaultValue={event.waiver_text} rows={6} placeholder="I understand hockey involves risk of injury... I agree this event may be photographed and live streamed..." />
@@ -904,6 +933,7 @@ function Fundraising({ bundle }: { bundle: Bundle }) {
         {!ranked.length && <p className="muted">No teams yet.</p>}
       </div>
 
+      <Pledges bundle={bundle} />
       <div className="card">
         <h2>People</h2>
         {players.map((p) => (
@@ -924,6 +954,127 @@ function Fundraising({ bundle }: { bundle: Bundle }) {
           </form>
         ))}
         {!players.length && <p className="muted">No one has signed up yet.</p>}
+      </div>
+    </>
+  );
+}
+
+function Pledges({ bundle }: { bundle: Bundle }) {
+  const { event, pledges, teams } = bundle;
+  if (!pledges.length) return null;
+  const { owed, paid, goals } = pledgeTotals(bundle);
+  return (
+    <div className="card">
+      <h2>Goal pledges</h2>
+      <p className="small muted">
+        {money(owed)} pledged so far · {money(paid)} paid. Amounts grow as goals are scored. After the tournament, message
+        pledgers their totals (Message tab → copy emails) and mark them paid here.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Team</th><th className="num">Per goal</th><th className="num">Owes now</th><th></th><th></th></tr></thead>
+          <tbody>
+            {pledges.map((p) => (
+              <tr key={p.id}>
+                <td>{p.name}{p.email && <div className="small"><a href={`mailto:${p.email}`}>{p.email}</a></div>}</td>
+                <td className="small">{p.team_id ? teams.find((t) => t.id === p.team_id)?.name : 'All teams'}</td>
+                <td className="num">{money(p.per_goal)}{p.max_total > 0 && <div className="small muted">cap {money(p.max_total)}</div>}</td>
+                <td className="num"><b>{money(pledgeOwed(p, goals))}</b></td>
+                <td>
+                  <form action={togglePledgePaid}>
+                    <Auth e={event} />
+                    <input type="hidden" name="id" value={p.id} />
+                    <button className={`btn small ${p.paid ? 'secondary' : ''}`}>{p.paid ? '✓ Paid' : 'Mark paid'}</button>
+                  </form>
+                </td>
+                <td>
+                  <form action={removePledge}>
+                    <Auth e={event} />
+                    <input type="hidden" name="id" value={p.id} />
+                    <ConfirmButton className="btn small danger" message={`Remove ${p.name}’s pledge?`}>Remove</ConfirmButton>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Auction ---------------- */
+
+function Auction({ bundle }: { bundle: Bundle }) {
+  const { event, auction } = bundle;
+  const sold = auction.filter((i) => i.high_bid);
+  return (
+    <>
+      <div className="notice info small">
+        ⚠️ Auctions can have tax and reporting rules (for example, receipts for amounts above an item’s value). Check with a
+        professional before you run one.
+      </div>
+      <div className="card">
+        <h2>Add an item</h2>
+        <form action={addAuctionItem} className="stack">
+          <Auth e={event} />
+          <label>Item<input name="title" required maxLength={120} placeholder="Signed jersey" /></label>
+          <label>Description<textarea name="description" maxLength={1000} rows={3} /></label>
+          <div className="row-2">
+            <label>Donated by<input name="donor" maxLength={120} /></label>
+            <label>Starting bid ($)<input name="start_bid" inputMode="decimal" placeholder="25" /></label>
+          </div>
+          <label>Bid steps ($) <span className="hint">Each new bid must beat the last by this much.</span><input name="increment" inputMode="decimal" placeholder="5" /></label>
+          <button className="btn">Add item</button>
+        </form>
+      </div>
+      <div className="card">
+        <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+          <h2 style={{ margin: 0 }}>Items ({auction.length})</h2>
+          <div className="btn-row">
+            <Link className="btn small secondary" href={`/e/${event.slug}/auction`} target="_blank">Public auction page</Link>
+            {auction.some((i) => !i.closed) && (
+              <form action={auctionItemAction}>
+                <Auth e={event} />
+                <input type="hidden" name="item_id" value="0" />
+                <input type="hidden" name="op" value="closeall" />
+                <ConfirmButton className="btn small" message="Close bidding on every item now?">Close all bidding</ConfirmButton>
+              </form>
+            )}
+          </div>
+        </div>
+        <p className="small muted" style={{ marginTop: 8 }}>
+          {sold.length} with bids · {money(sold.reduce((s, i) => s + (i.high_bid ?? 0), 0))} in high bids. Paid items count
+          toward the event total.
+        </p>
+        {auction.map((i) => (
+          <div key={i.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+            <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+              <div>
+                <b>{i.title}</b> {i.closed && <span className="pill">Closed</span>}
+                <div className="small muted">
+                  {i.high_bid ? <>High bid {money(i.high_bid)} by {i.high_name} {i.high_email && <a href={`mailto:${i.high_email}`}>{i.high_email}</a>}</> : <>No bids · next {money(nextBid(i))}</>}
+                </div>
+              </div>
+              <div className="btn-row">
+                {(['close', 'paid', 'delete'] as const).map((op) => (
+                  <form key={op} action={auctionItemAction}>
+                    <Auth e={event} />
+                    <input type="hidden" name="item_id" value={i.id} />
+                    <input type="hidden" name="op" value={op} />
+                    {op === 'delete' ? (
+                      <ConfirmButton className="btn small danger" message={`Delete “${i.title}” and its bids?`}>Delete</ConfirmButton>
+                    ) : (
+                      <button className={`btn small ${op === 'paid' && i.paid ? '' : 'secondary'}`}>
+                        {op === 'close' ? (i.closed ? 'Reopen' : 'Close bidding') : i.paid ? '✓ Paid' : 'Mark paid'}
+                      </button>
+                    )}
+                  </form>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </>
   );

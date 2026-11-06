@@ -210,10 +210,12 @@ export async function registerSolo(fd: FormData) {
       Boolean(event.waiver_text),
     ],
   );
-  const payUrl = safeUrl(fd.get('pay_url'));
-  if (payUrl) {
-    await query('UPDATE players SET pay_url=$1 WHERE id=$2', [payUrl, inserted!.id]);
-  }
+  await query('UPDATE players SET pay_url=$1, jersey_size=$2, jersey_number=$3 WHERE id=$4', [
+    safeUrl(fd.get('pay_url')),
+    text(fd.get('jersey_size'), 10),
+    text(fd.get('jersey_number'), 4),
+    inserted!.id,
+  ]);
 
   // Place just the new player now; everyone already on a team stays put.
   await runBalance(event, true);
@@ -357,7 +359,8 @@ export async function updateSettings(fd: FormData) {
     `UPDATE events SET name=$1, charity=$2, description=$3, event_date=$4, location=$5, contact_email=$6,
        team_fee=$7, solo_fee=$8, payment_url=$9, team_size=$10, games_per_team=$11, playoff_teams=$12,
        score_label=$13, score_order=$14, pledge_unit=$15,
-       stream_url=$17, fundraising_goal=$18, sponsors=$19, waiver_text=$20, start_at=$21
+       stream_url=$17, fundraising_goal=$18, sponsors=$19, waiver_text=$20, start_at=$21,
+       pledges_open=$22, jersey_sizes=$23
      WHERE id=$16`,
     [
       text(fd.get('name'), 120) || event.name,
@@ -380,6 +383,8 @@ export async function updateSettings(fd: FormData) {
       fd.has('fundraising_goal') ? toCents(fd.get('fundraising_goal')) : event.fundraising_goal,
       fd.has('sponsors') ? text(fd.get('sponsors'), 3000) : event.sponsors,
       fd.has('waiver_text') ? text(fd.get('waiver_text'), 8000) : event.waiver_text,
+      fd.has('pledges_form') ? fd.get('pledges_open') === 'on' : event.pledges_open,
+      fd.has('jersey_sizes') ? text(fd.get('jersey_sizes'), 200) : event.jersey_sizes,
       fd.has('start_at') ? (/^\d{4}-\d{2}-\d{2}$/.test(text(fd.get('start_at'), 10)) ? text(fd.get('start_at'), 10) : '') : event.start_at,
     ],
   );
@@ -605,9 +610,13 @@ export async function updateMySignup(fd: FormData) {
   const name = text(fd.get('name'), 80);
   await query(
     `UPDATE players SET name = COALESCE(NULLIF($1,''), name), position = $2, honoring = $3,
-       goal = CASE WHEN $5 THEN $4 ELSE goal END, pay_url = $7
+       goal = CASE WHEN $5 THEN $4 ELSE goal END, pay_url = $7,
+       jersey_size = CASE WHEN $9 THEN $8 ELSE jersey_size END
      WHERE id = $6`,
-    [name, text(fd.get('position'), 40), text(fd.get('honoring'), 120), toCents(fd.get('goal')), fd.has('goal'), row.id, safeUrl(fd.get('pay_url'))],
+    [
+      name, text(fd.get('position'), 40), text(fd.get('honoring'), 120), toCents(fd.get('goal')), fd.has('goal'), row.id,
+      safeUrl(fd.get('pay_url')), text(fd.get('jersey_size'), 10), fd.has('jersey_size'),
+    ],
   );
   revalidatePath(`/e/${row.slug}`);
   revalidatePath('/account');
@@ -752,4 +761,96 @@ export async function deleteMyAccount(fd: FormData) {
   const { cookies } = await import('next/headers');
   (await cookies()).delete('cek_session');
   redirect('/?deleted=1');
+}
+
+/* ---------- pledge per goal ---------- */
+
+export async function makeGoalPledge(fd: FormData) {
+  const event = await getEventBySlug(text(fd.get('slug'), 100));
+  if (!event || !event.pledges_open) throw new Error('Pledges aren’t open for this event.');
+  if (text(fd.get('website'), 200)) redirect(`/e/${event.slug}?pledged=1#pledge`);
+  if (!(await allow(`pledge:${event.id}:${await clientIp()}`, 10, 30))) {
+    redirect(`/e/${event.slug}?err=${encodeURIComponent('Too many pledges from this connection. Try again soon.')}#pledge`);
+  }
+  const user = await currentUser();
+  const name = text(fd.get('name'), 80) || user?.name || '';
+  const perGoal = toCents(fd.get('per_goal'));
+  if (!name || perGoal < 100) redirect(`/e/${event.slug}?err=${encodeURIComponent('Add your name and at least $1 per goal.')}#pledge`);
+  const teamRaw = text(fd.get('team_id'), 20);
+  const team = teamRaw ? await one<{ id: number }>('SELECT id FROM teams WHERE id=$1 AND event_id=$2', [toInt(teamRaw, 0, 0, 1e9), event.id]) : null;
+  await query(
+    `INSERT INTO goal_pledges (event_id, team_id, name, email, per_goal, max_total, user_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [event.id, team?.id ?? null, name, normalizeEmail(text(fd.get('email'), 200) || user?.email || ''), Math.min(perGoal, 100000), toCents(fd.get('max_total')), user?.id ?? null],
+  );
+  refresh(event);
+  redirect(`/e/${event.slug}?pledged=1#pledge`);
+}
+
+export async function togglePledgePaid(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('UPDATE goal_pledges SET paid = NOT paid WHERE id=$1 AND event_id=$2', [toInt(fd.get('id'), 0, 0, 1e9), event.id]);
+  refresh(event);
+  redirect(manageUrl(event, undefined, 'money'));
+}
+
+export async function removePledge(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('DELETE FROM goal_pledges WHERE id=$1 AND event_id=$2', [toInt(fd.get('id'), 0, 0, 1e9), event.id]);
+  refresh(event);
+  redirect(manageUrl(event, 'Pledge removed', 'money'));
+}
+
+/* ---------- silent auction ---------- */
+
+export async function addAuctionItem(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const title = text(fd.get('title'), 120);
+  if (title) {
+    await query(
+      `INSERT INTO auction_items (event_id, title, description, donor, start_bid, increment) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [event.id, title, text(fd.get('description'), 1000), text(fd.get('donor'), 120), toCents(fd.get('start_bid')), toCents(fd.get('increment')) || 500],
+    );
+  }
+  refresh(event);
+  revalidatePath(`/e/${event.slug}/auction`);
+  redirect(manageUrl(event, title ? `Added “${title}”` : undefined, 'auction'));
+}
+
+export async function auctionItemAction(fd: FormData) {
+  const event = await organizerEvent(fd);
+  const id = toInt(fd.get('item_id'), 0, 0, 1e9);
+  const op = text(fd.get('op'), 10);
+  if (op === 'close') await query('UPDATE auction_items SET closed = NOT closed WHERE id=$1 AND event_id=$2', [id, event.id]);
+  if (op === 'paid') await query('UPDATE auction_items SET paid = NOT paid WHERE id=$1 AND event_id=$2', [id, event.id]);
+  if (op === 'delete') await query('DELETE FROM auction_items WHERE id=$1 AND event_id=$2', [id, event.id]);
+  if (op === 'closeall') await query('UPDATE auction_items SET closed = TRUE WHERE event_id=$1', [event.id]);
+  refresh(event);
+  revalidatePath(`/e/${event.slug}/auction`);
+  redirect(manageUrl(event, op === 'closeall' ? 'Bidding closed on all items' : undefined, 'auction'));
+}
+
+export async function placeBid(fd: FormData) {
+  const slug = text(fd.get('slug'), 100);
+  const user = await currentUser();
+  if (!user) redirect(`/login?next=/e/${slug}/auction`);
+  const itemId = toInt(fd.get('item_id'), 0, 0, 1e9);
+  const back = (m: string) => redirect(`/e/${slug}/auction?msg=${encodeURIComponent(m)}#item-${itemId}`);
+  if (!(await allow(`bid:${user.id}`, 30, 10))) back('Too many bids in a short time. Please wait a few minutes.');
+  const item = await one<{ id: number; closed: boolean; start_bid: number; increment: number; event_id: number }>(
+    `SELECT i.id, i.closed, i.start_bid, i.increment, i.event_id FROM auction_items i JOIN events e ON e.id = i.event_id
+     WHERE i.id = $1 AND e.slug = $2`,
+    [itemId, slug],
+  );
+  if (!item || item.closed) back('Bidding is closed for this item.');
+  const amount = toCents(fd.get('amount'));
+  // The insert only succeeds if the bid still beats the current high bid (no race between two bidders).
+  const ok = await one<{ id: number }>(
+    `INSERT INTO auction_bids (item_id, user_id, amount)
+     SELECT $1, $2, $3
+     WHERE $3 >= GREATEST($4::int, 100, COALESCE((SELECT MAX(amount) FROM auction_bids WHERE item_id = $1) + GREATEST($5::int, 100), 0))
+     RETURNING id`,
+    [item!.id, user.id, amount, Number(item!.start_bid), Number(item!.increment)],
+  );
+  revalidatePath(`/e/${slug}/auction`);
+  back(ok ? 'Bid placed — you’re the high bidder!' : 'Someone bid higher, or your bid is below the minimum. Try again.');
 }

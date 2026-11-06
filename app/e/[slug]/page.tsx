@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getBundle, getEventBySlug } from '@/lib/data';
-import { registerSolo, registerTeam } from '@/lib/actions';
+import { makeGoalPledge, registerSolo, registerTeam } from '@/lib/actions';
+import { pledgeOwed, pledgeTotals } from '@/lib/pledges';
 import { feeLabel } from '@/lib/format';
 import { currentUser } from '@/lib/auth';
 import Link from 'next/link';
@@ -34,6 +35,65 @@ function FormExtras({ waiver, who }: { waiver: string; who: string }) {
         </div>
       )}
     </>
+  );
+}
+
+function PledgePerGoal({ bundle, userName, userEmail, done }: { bundle: Awaited<ReturnType<typeof getBundle>>; userName: string; userEmail: string; done: boolean }) {
+  const { event, teams } = bundle;
+  const { owed, perGoal, goals } = pledgeTotals(bundle);
+  const byTeam = teams
+    .map((t) => ({ t, per: bundle.pledges.filter((p) => p.team_id === t.id).reduce((s, p) => s + p.per_goal, 0) }))
+    .filter((x) => x.per > 0)
+    .sort((a, b) => b.per - a.per);
+  return (
+    <section id="pledge" className="card">
+      <h2>🥅 Pledge per goal</h2>
+      <p className="muted">
+        Pick a team and pledge an amount for every goal they score this tournament. Set a cap if you like. Pay when it’s over.
+      </p>
+      {perGoal > 0 && (
+        <div className="stats" style={{ marginBottom: 12 }}>
+          <div className="stat"><span className="small muted">Riding on every goal</span><b>{money(perGoal)}</b></div>
+          <div className="stat"><span className="small muted">Pledged so far</span><b>{money(owed)}</b></div>
+        </div>
+      )}
+      {byTeam.length > 0 && (
+        <p className="small">
+          {byTeam.map(({ t, per }) => (
+            <span key={t.id} className="pill" style={{ marginRight: 6 }}>{t.name}: {money(per)}/goal · {goals.get(t.id) ?? 0} goals</span>
+          ))}
+        </p>
+      )}
+      {done && <div className="notice good">Thank you! Your pledge is in. The organizer will share how to pay after the tournament.</div>}
+      <form action={makeGoalPledge} className="stack">
+        <input type="hidden" name="slug" value={event.slug} />
+        <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+          <input name="website" tabIndex={-1} autoComplete="off" />
+        </div>
+        <div className="row-2">
+          <label>
+            Team
+            <select name="team_id" defaultValue="">
+              <option value="">Every goal by every team</option>
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+          <label>
+            $ per goal
+            <input name="per_goal" inputMode="decimal" required placeholder="5" />
+          </label>
+        </div>
+        <div className="row-2">
+          <label>Your name<input name="name" required maxLength={80} defaultValue={userName} /></label>
+          <label>Email <span className="hint">So the organizer can send your total.</span><input name="email" type="email" defaultValue={userEmail} /></label>
+        </div>
+        <label>
+          Most I’ll give ($) <span className="hint">Optional cap.</span>
+          <input name="max_total" inputMode="decimal" placeholder="100" />
+        </label>
+        <button className="btn">Make my pledge</button>
+      </form>
+    </section>
   );
 }
 
@@ -202,6 +262,23 @@ export default async function EventPage({ params, searchParams }: Props) {
                       </select>
                     </label>
                   )}
+                  {event.jersey_sizes && (
+                    <div className="row-2">
+                      <label>
+                        Jersey size
+                        <select name="jersey_size" defaultValue="">
+                          <option value="">Choose a size</option>
+                          {event.jersey_sizes.split(',').map((x) => x.trim()).filter(Boolean).map((x) => (
+                            <option key={x} value={x}>{x}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Jersey number <span className="hint">Request, if you have one.</span>
+                        <input name="jersey_number" inputMode="numeric" maxLength={3} />
+                      </label>
+                    </div>
+                  )}
                   <label>
                     Playing in honor of <span className="hint">Optional. Shown on the roster, like “Dad, Navy.”</span>
                     <input name="honoring" maxLength={120} />
@@ -291,6 +368,18 @@ export default async function EventPage({ params, searchParams }: Props) {
           <PledgeBoard bundle={bundle} />
         </section>
       )}
+
+      {bundle.auction.length > 0 && (
+        <section className="card">
+          <h2>🏷️ Silent auction</h2>
+          <p className="muted">
+            {bundle.auction.filter((i) => !i.closed).length} item{bundle.auction.filter((i) => !i.closed).length === 1 ? '' : 's'} open for bids.
+          </p>
+          <Link className="btn" href={`/e/${event.slug}/auction`}>See items and bid</Link>
+        </section>
+      )}
+
+      {event.pledges_open && event.kind === 'bracket' && <PledgePerGoal bundle={bundle} userName={user?.name ?? ''} userEmail={user?.email ?? ''} done={!!sp.pledged} />}
 
       {!isPledge && <TeamMoneyRace bundle={bundle} />}
 

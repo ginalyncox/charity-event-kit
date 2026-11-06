@@ -1,6 +1,6 @@
 import 'server-only';
 import { one, query } from './db';
-import type { Bundle, EventRow, Game, Player, Team } from './types';
+import type { AuctionItem, Bundle, EventRow, Game, GoalPledge, Player, Team } from './types';
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
@@ -55,15 +55,38 @@ export async function getEventBySlug(slug: string): Promise<EventRow | null> {
 }
 
 export async function getBundle(event: EventRow): Promise<Bundle> {
-  const [teams, players, games] = await Promise.all([
+  const [teams, players, games, pledges, auction] = await Promise.all([
     query('SELECT * FROM teams WHERE event_id = $1 ORDER BY sort_order, id', [event.id]),
     query('SELECT * FROM players WHERE event_id = $1 ORDER BY id', [event.id]),
     query('SELECT * FROM games WHERE event_id = $1 ORDER BY stage DESC, round, slot, id', [event.id]),
+    query('SELECT * FROM goal_pledges WHERE event_id = $1 ORDER BY id', [event.id]),
+    query(
+      `SELECT i.*, b.amount AS high_bid, b.user_id AS high_user_id, u.name AS high_name, u.email AS high_email,
+         (SELECT COUNT(*)::int FROM auction_bids x WHERE x.item_id = i.id) AS bid_count
+       FROM auction_items i
+       LEFT JOIN LATERAL (SELECT amount, user_id FROM auction_bids WHERE item_id = i.id ORDER BY amount DESC, id ASC LIMIT 1) b ON TRUE
+       LEFT JOIN users u ON u.id = b.user_id
+       WHERE i.event_id = $1 ORDER BY i.id`,
+      [event.id],
+    ),
   ]);
   return {
     event,
     teams: teams.map(toTeam),
     players: players.map(toPlayer),
     games: games.map(toGame),
+    pledges: pledges.map(
+      (r: any): GoalPledge => ({ ...r, team_id: num(r.team_id), per_goal: Number(r.per_goal), max_total: Number(r.max_total), user_id: num(r.user_id) }),
+    ),
+    auction: auction.map(
+      (r: any): AuctionItem => ({
+        ...r,
+        start_bid: Number(r.start_bid),
+        increment: Number(r.increment),
+        high_bid: num(r.high_bid),
+        high_user_id: num(r.high_user_id),
+        bid_count: Number(r.bid_count),
+      }),
+    ),
   };
 }

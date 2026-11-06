@@ -21,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const teamOf = (id: number | null) => teams.find((t) => t.id === id);
   const header = [
     'Name', 'Email', 'Team', 'Signed up as', 'Position', 'Skill', 'Picked team', 'Playing in honor of',
-    'Paid', 'Checked in', 'Waiver agreed', 'Waiver signed by', 'Raised ($)', 'Goal ($)', 'Distance', 'Team captain', 'Captain email',
+    'Paid', 'Checked in', 'Waiver agreed', 'Waiver signed by', 'Raised ($)', 'Goal ($)', 'Distance', 'Team captain', 'Captain email', 'Jersey size', 'Jersey number', 'Pay link',
   ];
   const rows = players.map((p) => {
     const t = teamOf(p.team_id);
@@ -32,6 +32,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       p.waiver_agreed_at ? new Date(p.waiver_agreed_at).toLocaleString('en-US', { timeZone: 'America/Chicago' }) : '',
       p.waiver_name, (p.raised / 100).toFixed(2), (p.goal / 100).toFixed(2), p.distance ?? '',
       t?.origin === 'registered' ? t.captain_name : '', t?.origin === 'registered' ? t.captain_email : '',
+      p.jersey_size, p.jersey_number, p.pay_url,
     ];
   });
   const csv = '﻿' + [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');

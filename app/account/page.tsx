@@ -212,6 +212,15 @@ function PlayingCard({ bundle, userId }: { bundle: Bundle; userId: number }) {
               )}
               {event.positions.length === 0 && <input type="hidden" name="position" value={p.position} />}
               <label>Playing in honor of<input name="honoring" defaultValue={p.honoring} maxLength={120} /></label>
+              {event.jersey_sizes && (
+                <label>
+                  Jersey size
+                  <select name="jersey_size" defaultValue={p.jersey_size}>
+                    <option value="">Choose a size</option>
+                    {event.jersey_sizes.split(',').map((x) => x.trim()).filter(Boolean).map((x) => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                </label>
+              )}
               <label>Fundraising goal ($)<input name="goal" inputMode="decimal" defaultValue={p.goal ? String(p.goal / 100) : ''} /></label>
               <label>
                 My fundraising link <span className="hint">Your personal Zeffy, Givebutter, or GoFundMe page. Your page’s Give button will use it.</span>

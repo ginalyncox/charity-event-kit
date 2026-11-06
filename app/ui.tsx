@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { champion, roundName, standings, winnerOf } from '@/lib/bracket';
 import { money } from '@/lib/format';
+import { pledgeTotals } from '@/lib/pledges';
 import type { Bundle, Game, Player, Team } from '@/lib/types';
 
 export function teamName(teams: Team[], id: number | null): string {
@@ -232,8 +233,12 @@ export function teamRaised(bundle: Bundle, t: Team): number {
   return t.raised + rosterOf(bundle.players, t.id).reduce((s, p) => s + p.raised, 0);
 }
 
+/** Everything marked as raised: team + personal money, paid goal pledges, and paid auction items. */
 export function totalRaised(bundle: Bundle): number {
-  return bundle.teams.reduce((s, t) => s + t.raised, 0) + bundle.players.reduce((s, p) => s + p.raised, 0);
+  const people = bundle.teams.reduce((s, t) => s + t.raised, 0) + bundle.players.reduce((s, p) => s + p.raised, 0);
+  const pledges = pledgeTotals(bundle).paid;
+  const auction = bundle.auction.filter((i) => i.paid && i.high_bid).reduce((s, i) => s + (i.high_bid ?? 0), 0);
+  return people + pledges + auction;
 }
 
 export function PledgeBoard({ bundle }: { bundle: Bundle }) {

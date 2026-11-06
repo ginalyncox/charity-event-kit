@@ -98,9 +98,40 @@ export type Game = {
   status: 'scheduled' | 'live' | 'final';
 };
 
+export type GoalPledge = {
+  id: number;
+  event_id: number;
+  team_id: number | null;
+  name: string;
+  email: string;
+  per_goal: number;
+  max_total: number;
+  paid: boolean;
+  user_id: number | null;
+};
+
+export type AuctionItem = {
+  id: number;
+  event_id: number;
+  title: string;
+  description: string;
+  donor: string;
+  start_bid: number;
+  increment: number;
+  closed: boolean;
+  paid: boolean;
+  high_bid: number | null;
+  high_user_id: number | null;
+  high_name: string | null;
+  high_email: string | null;
+  bid_count: number;
+};
+
 export type Bundle = {
   event: EventRow;
   teams: Team[];
   players: Player[];
   games: Game[];
+  pledges: GoalPledge[];
+  auction: AuctionItem[];
 };
