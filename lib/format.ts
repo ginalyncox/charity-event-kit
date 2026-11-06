@@ -64,3 +64,12 @@ export function feeLabel(event: { team_fee: number; solo_fee: number }): string 
     .filter(Boolean)
     .join(' · ');
 }
+
+/** "zeffy.com" from a link, so people can see where a give button goes. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}

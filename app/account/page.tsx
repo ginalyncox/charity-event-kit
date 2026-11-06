@@ -7,12 +7,16 @@ import { getBundle, getEventBySlug } from '@/lib/data';
 import { champion } from '@/lib/bracket';
 import { money } from '@/lib/format';
 import type { Bundle, Player } from '@/lib/types';
+import ConfirmButton from '@/app/ConfirmButton';
+import AutoRefresh from '@/app/AutoRefresh';
+import { cancelMySignup, updateMySignup, updateMyTeam } from '@/lib/actions';
 import { GameLine, playoffRoundLabel, rankTeams, rosterOf, teamName } from '@/app/ui';
 
 export const metadata: Metadata = { title: 'My events', robots: { index: false } };
 export const dynamic = 'force-dynamic';
 
-export default async function AccountPage() {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
   const user = await currentUser();
   if (!user) redirect('/login?next=/account');
 
@@ -33,6 +37,8 @@ export default async function AccountPage() {
     <>
       <p className="eyebrow">Hi, {user.name || user.email}</p>
       <h1>My events</h1>
+      <AutoRefresh seconds={30} />
+      {sp.msg && <div className="notice good" role="status">{sp.msg}</div>}
 
       <section>
         <h2>Playing in</h2>
@@ -153,14 +159,68 @@ function PlayingCard({ bundle, userId }: { bundle: Bundle; userId: number }) {
         );
       })}
 
-      {event.kind === 'pledge' &&
-        me.map((p) => (
-          <p key={p.id} style={{ marginTop: 8 }}>
-            Raised: <b>{money(p.raised)}</b>
-            {p.goal > 0 && <> of {money(p.goal)}</>}
-            {p.distance !== null && <> · {p.distance} {event.pledge_unit}</>}
-          </p>
-        ))}
+      {captainOf.map((t) => (
+        <details key={`cap-${t.id}`} style={{ marginTop: 10 }}>
+          <summary className="small">Team fundraising (you’re the captain of {t.name})</summary>
+          <form action={updateMyTeam} className="stack" style={{ marginTop: 10 }}>
+            <input type="hidden" name="team_id" value={t.id} />
+            <label>Team goal ($)<input name="goal" inputMode="decimal" defaultValue={t.goal ? String(t.goal / 100) : ''} /></label>
+            <label>
+              Team fundraising link <span className="hint">Your team page’s Give button will use it.</span>
+              <input name="pay_url" inputMode="url" defaultValue={t.pay_url} placeholder="https://..." />
+            </label>
+            <button className="btn small">Save team fundraising</button>
+          </form>
+        </details>
+      ))}
+      {me.map((p) => (
+        <div key={p.id} style={{ marginTop: 10 }}>
+          {event.kind === 'pledge' && (
+            <p style={{ margin: '0 0 6px' }}>
+              Raised: <b>{money(p.raised)}</b>
+              {p.goal > 0 && <> of {money(p.goal)}</>}
+              {p.distance !== null && <> · {p.distance} {event.pledge_unit}</>}
+            </p>
+          )}
+          <div className="btn-row">
+            <Link className="btn small secondary" href={`/e/${event.slug}/p/${p.id}`}>My fundraising page (share it!)</Link>
+            {p.team_id && <Link className="btn small secondary" href={`/e/${event.slug}/t/${p.team_id}`}>My team’s page</Link>}
+            {event.start_at && (
+              <a className="btn small secondary" href={`/e/${event.slug}/calendar${p.team_id ? `?team=${p.team_id}` : ''}`}>Add to calendar</a>
+            )}
+          </div>
+          <details style={{ marginTop: 10 }}>
+            <summary className="small">Change or cancel my sign-up</summary>
+            <form action={updateMySignup} className="stack" style={{ marginTop: 10 }}>
+              <input type="hidden" name="player_id" value={p.id} />
+              <label>Name on the roster<input name="name" defaultValue={p.name} maxLength={80} /></label>
+              {event.positions.length > 0 && (
+                <label>
+                  Position
+                  <select name="position" defaultValue={p.position}>
+                    <option value="">Any / not sure</option>
+                    {event.positions.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {event.positions.length === 0 && <input type="hidden" name="position" value={p.position} />}
+              <label>Playing in honor of<input name="honoring" defaultValue={p.honoring} maxLength={120} /></label>
+              <label>Fundraising goal ($)<input name="goal" inputMode="decimal" defaultValue={p.goal ? String(p.goal / 100) : ''} /></label>
+              <label>
+                My fundraising link <span className="hint">Your personal Zeffy, Givebutter, or GoFundMe page. Your page’s Give button will use it.</span>
+                <input name="pay_url" inputMode="url" defaultValue={p.pay_url} placeholder="https://..." />
+              </label>
+              <button className="btn small">Save changes</button>
+            </form>
+            <form action={cancelMySignup} style={{ marginTop: 10 }}>
+              <input type="hidden" name="player_id" value={p.id} />
+              <ConfirmButton className="btn small danger" message={`Cancel your sign-up for ${event.name}? If you paid, contact the organizer about a refund.`}>
+                Cancel my sign-up
+              </ConfirmButton>
+            </form>
+          </details>
+        </div>
+      ))}
     </div>
   );
 }

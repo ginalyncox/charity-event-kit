@@ -50,6 +50,7 @@ export type Team = {
   goal: number;
   sort_order: number;
   captain_user_id: number | null;
+  pay_url: string;
 };
 
 export type Player = {
@@ -73,6 +74,7 @@ export type Player = {
   checked_in: boolean;
   waiver_agreed_at: string | null;
   waiver_name: string;
+  pay_url: string;
 };
 
 export type Game = {

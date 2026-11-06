@@ -152,9 +152,9 @@ export async function registerTeam(fd: FormData) {
 
   const order = await one<{ n: number }>('SELECT COALESCE(MAX(sort_order),0)+1 AS n FROM teams WHERE event_id=$1', [event.id]);
   const team = await one<{ id: number }>(
-    `INSERT INTO teams (event_id, name, captain_name, captain_email, captain_user_id, origin, goal, sort_order)
-     VALUES ($1,$2,$3,$4,$5,'registered',$6,$7) RETURNING id`,
-    [event.id, teamName, captain, email, user?.id ?? null, toCents(fd.get('goal')), Number(order?.n ?? 1)],
+    `INSERT INTO teams (event_id, name, captain_name, captain_email, captain_user_id, origin, goal, sort_order, pay_url)
+     VALUES ($1,$2,$3,$4,$5,'registered',$6,$7,$8) RETURNING id`,
+    [event.id, teamName, captain, email, user?.id ?? null, toCents(fd.get('goal')), Number(order?.n ?? 1), safeUrl(fd.get('pay_url'))],
   );
 
   for (const line of members) {
@@ -192,10 +192,11 @@ export async function registerSolo(fd: FormData) {
   const name = text(fd.get('name'), 80) || user?.name || '';
   if (!name) throw new Error('Your name is required.');
 
-  await query(
+  const inserted = await one<{ id: number }>(
     `INSERT INTO players (event_id, user_id, name, email, position, skill, choice, honoring, goal, is_solo, locked,
        waiver_agreed_at, waiver_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,FALSE, CASE WHEN $10 THEN now() END, CASE WHEN $10 THEN $3 ELSE '' END)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,FALSE, CASE WHEN $10 THEN now() END, CASE WHEN $10 THEN $3 ELSE '' END)
+     RETURNING id`,
     [
       event.id,
       user?.id ?? null,
@@ -209,6 +210,10 @@ export async function registerSolo(fd: FormData) {
       Boolean(event.waiver_text),
     ],
   );
+  const payUrl = safeUrl(fd.get('pay_url'));
+  if (payUrl) {
+    await query('UPDATE players SET pay_url=$1 WHERE id=$2', [payUrl, inserted!.id]);
+  }
 
   // Place just the new player now; everyone already on a team stays put.
   await runBalance(event, true);
@@ -352,7 +357,7 @@ export async function updateSettings(fd: FormData) {
     `UPDATE events SET name=$1, charity=$2, description=$3, event_date=$4, location=$5, contact_email=$6,
        team_fee=$7, solo_fee=$8, payment_url=$9, team_size=$10, games_per_team=$11, playoff_teams=$12,
        score_label=$13, score_order=$14, pledge_unit=$15,
-       stream_url=$17, fundraising_goal=$18, sponsors=$19, waiver_text=$20
+       stream_url=$17, fundraising_goal=$18, sponsors=$19, waiver_text=$20, start_at=$21
      WHERE id=$16`,
     [
       text(fd.get('name'), 120) || event.name,
@@ -375,6 +380,7 @@ export async function updateSettings(fd: FormData) {
       fd.has('fundraising_goal') ? toCents(fd.get('fundraising_goal')) : event.fundraising_goal,
       fd.has('sponsors') ? text(fd.get('sponsors'), 3000) : event.sponsors,
       fd.has('waiver_text') ? text(fd.get('waiver_text'), 8000) : event.waiver_text,
+      fd.has('start_at') ? (/^\d{4}-\d{2}-\d{2}$/.test(text(fd.get('start_at'), 10)) ? text(fd.get('start_at'), 10) : '') : event.start_at,
     ],
   );
   refresh(event);
@@ -578,4 +584,83 @@ export async function messagePlayers(fd: FormData) {
     if (await sendMail(email, `${event.name}: ${subject}`, body + footer, event.contact_email || undefined)) sent++;
   }
   redirect(manageUrl(event, `Message sent to ${sent} of ${emails.size} people`, 'message'));
+}
+
+/* ---------- players: edit or cancel your own sign-up ---------- */
+
+async function mySignup(fd: FormData) {
+  const user = await currentUser();
+  if (!user) redirect('/login?next=/account');
+  const row = await one<{ id: number; event_id: number; slug: string }>(
+    `SELECT p.id, p.event_id, e.slug FROM players p JOIN events e ON e.id = p.event_id
+     WHERE p.id = $1 AND p.user_id = $2`,
+    [toInt(fd.get('player_id'), 0, 0, 1e9), user.id],
+  );
+  if (!row) throw new Error('That sign-up isn’t yours.');
+  return row;
+}
+
+export async function updateMySignup(fd: FormData) {
+  const row = await mySignup(fd);
+  const name = text(fd.get('name'), 80);
+  await query(
+    `UPDATE players SET name = COALESCE(NULLIF($1,''), name), position = $2, honoring = $3,
+       goal = CASE WHEN $5 THEN $4 ELSE goal END, pay_url = $7
+     WHERE id = $6`,
+    [name, text(fd.get('position'), 40), text(fd.get('honoring'), 120), toCents(fd.get('goal')), fd.has('goal'), row.id, safeUrl(fd.get('pay_url'))],
+  );
+  revalidatePath(`/e/${row.slug}`);
+  revalidatePath('/account');
+  redirect('/account?msg=Sign-up+updated');
+}
+
+export async function cancelMySignup(fd: FormData) {
+  const row = await mySignup(fd);
+  await query('DELETE FROM players WHERE id = $1', [row.id]);
+  revalidatePath(`/e/${row.slug}`);
+  revalidatePath('/account');
+  redirect('/account?msg=You%E2%80%99re+no+longer+signed+up');
+}
+
+/* ---------- organizer: fundraising ---------- */
+
+export async function saveTeamMoney(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('UPDATE teams SET goal=$1, raised=$2, pay_url=$5 WHERE id=$3 AND event_id=$4', [
+    toCents(fd.get('goal')),
+    toCents(fd.get('raised')),
+    toInt(fd.get('team_id'), 0, 0, 1e9),
+    event.id,
+    safeUrl(fd.get('pay_url')),
+  ]);
+  refresh(event);
+  redirect(manageUrl(event, 'Team fundraising saved', 'money'));
+}
+
+export async function savePersonMoney(fd: FormData) {
+  const event = await organizerEvent(fd);
+  await query('UPDATE players SET goal=$1, raised=$2, pay_url=$5 WHERE id=$3 AND event_id=$4', [
+    toCents(fd.get('goal')),
+    toCents(fd.get('raised')),
+    toInt(fd.get('player_id'), 0, 0, 1e9),
+    event.id,
+    safeUrl(fd.get('pay_url')),
+  ]);
+  refresh(event);
+  redirect(manageUrl(event, 'Saved', 'money'));
+}
+
+/** Team captains (logged in) set their team's goal and pay link. */
+export async function updateMyTeam(fd: FormData) {
+  const user = await currentUser();
+  if (!user) redirect('/login?next=/account');
+  const row = await one<{ id: number; slug: string }>(
+    `SELECT t.id, e.slug FROM teams t JOIN events e ON e.id = t.event_id WHERE t.id = $1 AND t.captain_user_id = $2`,
+    [toInt(fd.get('team_id'), 0, 0, 1e9), user.id],
+  );
+  if (!row) throw new Error('Only the team captain can change this.');
+  await query('UPDATE teams SET goal=$1, pay_url=$2 WHERE id=$3', [toCents(fd.get('goal')), safeUrl(fd.get('pay_url')), row.id]);
+  revalidatePath(`/e/${row.slug}`);
+  revalidatePath('/account');
+  redirect('/account?msg=Team+fundraising+saved');
 }

@@ -9,7 +9,7 @@ import AutoRefresh from '@/app/AutoRefresh';
 import StreamBox from '@/app/StreamBox';
 import { money } from '@/lib/format';
 import { parseSponsors } from '@/lib/sponsors';
-import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable, totalRaised } from '@/app/ui';
+import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable, TeamMoneyRace, totalRaised } from '@/app/ui';
 
 /** Hidden spam trap plus the waiver checkbox, shared by both sign-up forms. */
 function FormExtras({ waiver, who }: { waiver: string; who: string }) {
@@ -87,6 +87,11 @@ export default async function EventPage({ params, searchParams }: Props) {
       {event.charity && (
         <p>
           <b>Raising money for:</b> {event.charity}
+        </p>
+      )}
+      {event.start_at && (
+        <p>
+          <a className="btn small secondary" href={`/e/${event.slug}/calendar`}>📅 Add to calendar</a>
         </p>
       )}
       {event.description && <p className="muted" style={{ whiteSpace: 'pre-line' }}>{event.description}</p>}
@@ -207,6 +212,10 @@ export default async function EventPage({ params, searchParams }: Props) {
                       <input name="goal" inputMode="decimal" placeholder="100" />
                     </label>
                   )}
+                  <label>
+                    Your own fundraising link <span className="hint">Optional. A personal Zeffy, Givebutter, or GoFundMe page. You can add it later in My events.</span>
+                    <input name="pay_url" inputMode="url" placeholder="https://..." />
+                  </label>
                   <FormExtras waiver={event.waiver_text} who="I have read and agree to the event waiver." />
                   <button type="submit" className="btn">Sign me up</button>
                 </form>
@@ -239,12 +248,14 @@ export default async function EventPage({ params, searchParams }: Props) {
                     </span>
                     <textarea name="members" rows={5} />
                   </label>
-                  {isPledge && (
-                    <label>
-                      Team fundraising goal ($) <span className="hint">Optional.</span>
-                      <input name="goal" inputMode="decimal" />
-                    </label>
-                  )}
+                  <label>
+                    Team fundraising goal ($) <span className="hint">Optional.</span>
+                    <input name="goal" inputMode="decimal" />
+                  </label>
+                  <label>
+                    Team fundraising link <span className="hint">Optional. Your team’s own Zeffy, Givebutter, or GoFundMe page.</span>
+                    <input name="pay_url" inputMode="url" placeholder="https://..." />
+                  </label>
                   <FormExtras waiver={event.waiver_text} who="As captain, I agree to the waiver and will share it with my team." />
                   <button type="submit" className="btn">Register our team</button>
                 </form>
@@ -280,6 +291,8 @@ export default async function EventPage({ params, searchParams }: Props) {
           <PledgeBoard bundle={bundle} />
         </section>
       )}
+
+      {!isPledge && <TeamMoneyRace bundle={bundle} />}
 
       <section style={{ marginTop: 8 }}>
         <h2>Teams</h2>

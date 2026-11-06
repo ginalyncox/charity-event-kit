@@ -12,6 +12,8 @@ import {
   balanceAction,
   deleteEvent,
   makeSchedule,
+  savePersonMoney,
+  saveTeamMoney,
   messagePlayers,
   toggleCheckIn,
   saveGameDetails,
@@ -92,6 +94,7 @@ export default async function ManagePage({ params, searchParams }: Props) {
     { id: 'people', label: 'People & payments' },
     { id: 'teams', label: 'Teams' },
     resultsTab,
+    { id: 'money', label: 'Fundraising' },
     { id: 'checkin', label: 'Check-in' },
     { id: 'message', label: 'Message' },
     { id: 'settings', label: 'Settings' },
@@ -133,6 +136,7 @@ export default async function ManagePage({ params, searchParams }: Props) {
       {tab === 'results' && <Results bundle={bundle} />}
       {tab === 'settings' && <Settings bundle={bundle} />}
       {tab === 'checkin' && <CheckIn bundle={bundle} q={sp.q ?? ''} />}
+      {tab === 'money' && <Fundraising bundle={bundle} />}
       {tab === 'message' && <Message bundle={bundle} />}
     </>
   );
@@ -410,18 +414,6 @@ function Teams({ bundle }: { bundle: Bundle }) {
           <button className="btn secondary">Add team</button>
         </form>
       </div>
-      <div className="card">
-        <h2>Delete this event</h2>
-        <p className="small muted">This permanently removes the event, everyone’s sign-ups, teams, and scores. It can’t be undone.</p>
-        <form action={deleteEvent} className="stack">
-          <Auth e={event} />
-          <label>
-            Type the event name to confirm: <b>{event.name}</b>
-            <input name="confirm_name" autoComplete="off" />
-          </label>
-          <ConfirmButton className="btn danger" message="Delete this event forever?">Delete event</ConfirmButton>
-        </form>
-      </div>
     </>
   );
 }
@@ -653,7 +645,8 @@ function Settings({ bundle }: { bundle: Bundle }) {
           <label>Event name<input name="name" defaultValue={event.name} maxLength={120} required /></label>
           <label>Raising money for<input name="charity" defaultValue={event.charity} maxLength={200} /></label>
           <div className="row-2">
-            <label>Date<input name="event_date" defaultValue={event.event_date} maxLength={100} /></label>
+            <label>Date (as shown)<input name="event_date" defaultValue={event.event_date} maxLength={100} /></label>
+            <label>First day <span className="hint">For “Add to calendar.”</span><input name="start_at" type="date" defaultValue={event.start_at} /></label>
             <label>Location<input name="location" defaultValue={event.location} maxLength={200} /></label>
           </div>
           <label>Organizer email<input name="contact_email" type="email" defaultValue={event.contact_email} maxLength={200} /></label>
@@ -700,6 +693,18 @@ function Settings({ bundle }: { bundle: Bundle }) {
             <textarea name="waiver_text" defaultValue={event.waiver_text} rows={6} placeholder="I understand hockey involves risk of injury... I agree this event may be photographed and live streamed..." />
           </label>
           <button className="btn">Save settings</button>
+        </form>
+      </div>
+      <div className="card">
+        <h2>Delete this event</h2>
+        <p className="small muted">This permanently removes the event, everyone’s sign-ups, teams, and scores. It can’t be undone.</p>
+        <form action={deleteEvent} className="stack">
+          <Auth e={event} />
+          <label>
+            Type the event name to confirm: <b>{event.name}</b>
+            <input name="confirm_name" autoComplete="off" />
+          </label>
+          <ConfirmButton className="btn danger" message="Delete this event forever?">Delete event</ConfirmButton>
         </form>
       </div>
     </>
@@ -802,6 +807,85 @@ function Message({ bundle }: { bundle: Bundle }) {
             Open in my email app (BCC)
           </a>
         )}
+      </div>
+    </>
+  );
+}
+
+/* ---------------- Fundraising ---------------- */
+
+function Fundraising({ bundle }: { bundle: Bundle }) {
+  const { event, players } = bundle;
+  const teams = activeTeams(bundle);
+  const total = totalRaised(bundle);
+  const goal = event.fundraising_goal;
+  const dollars = (c: number) => (c ? (c / 100).toString() : '');
+  const ranked = teams.map((t) => ({ t, sum: teamRaised(bundle, t) })).sort((a, b) => b.sum - a.sum);
+  return (
+    <>
+      <div className="card">
+        <h2>Event total</h2>
+        <p style={{ margin: 0 }}>
+          <b style={{ fontSize: '1.6rem' }}>{money(total)}</b>
+          {goal > 0 ? <> raised of {money(goal)} goal</> : <> raised</>}
+        </p>
+        {goal > 0 && (
+          <div className="thermo" aria-hidden="true"><span style={{ width: `${Math.min(100, (total / goal) * 100)}%` }} /></div>
+        )}
+        <p className="small muted">
+          Total = money given to teams + money each person raised. Entry fees aren’t counted unless you add them here. Set the
+          event goal on the Settings tab.
+        </p>
+      </div>
+
+      <div className="card">
+        <h2>Teams</h2>
+        <p className="small muted">
+          Each team has its own shareable page. “Given to team” is money given to the team as a whole; the team total adds its
+          members’ amounts. Teams and people can add their own pay links (like a personal Zeffy page) — their page’s Give
+          button uses it, otherwise your event payment link. Money raised on those pages isn’t counted automatically; enter it
+          here.
+        </p>
+        {ranked.map(({ t, sum }, i) => (
+          <form key={t.id} action={saveTeamMoney} className="btn-row" style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+            <Auth e={event} />
+            <input type="hidden" name="team_id" value={t.id} />
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <b>{i + 1}. {t.name}</b>
+              <div className="small muted">
+                Total {money(sum)}{t.goal > 0 ? ` of ${money(t.goal)}` : ''} ·{' '}
+                <Link href={`/e/${event.slug}/t/${t.id}`} target="_blank">Team page</Link>
+              </div>
+            </div>
+            <input name="goal" inputMode="decimal" defaultValue={dollars(t.goal)} placeholder="Goal $" aria-label={`${t.name} goal`} style={{ width: 100 }} />
+            <input name="raised" inputMode="decimal" defaultValue={dollars(t.raised)} placeholder="Given $" aria-label={`${t.name} given to team`} style={{ width: 100 }} />
+            <input name="pay_url" defaultValue={t.pay_url} placeholder="Team pay link" aria-label={`${t.name} pay link`} style={{ width: 200 }} />
+            <button className="btn small secondary">Save</button>
+          </form>
+        ))}
+        {!ranked.length && <p className="muted">No teams yet.</p>}
+      </div>
+
+      <div className="card">
+        <h2>People</h2>
+        {players.map((p) => (
+          <form key={p.id} action={savePersonMoney} className="btn-row" style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+            <Auth e={event} />
+            <input type="hidden" name="player_id" value={p.id} />
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <b>{p.name}</b>
+              <div className="small muted">
+                {money(p.raised)}{p.goal > 0 ? ` of ${money(p.goal)}` : ''} ·{' '}
+                <Link href={`/e/${event.slug}/p/${p.id}`} target="_blank">Personal page</Link>
+              </div>
+            </div>
+            <input name="goal" inputMode="decimal" defaultValue={dollars(p.goal)} placeholder="Goal $" aria-label={`${p.name} goal`} style={{ width: 100 }} />
+            <input name="raised" inputMode="decimal" defaultValue={dollars(p.raised)} placeholder="Raised $" aria-label={`${p.name} raised`} style={{ width: 100 }} />
+            <input name="pay_url" defaultValue={p.pay_url} placeholder="Personal pay link" aria-label={`${p.name} pay link`} style={{ width: 200 }} />
+            <button className="btn small secondary">Save</button>
+          </form>
+        ))}
+        {!players.length && <p className="muted">No one has signed up yet.</p>}
       </div>
     </>
   );

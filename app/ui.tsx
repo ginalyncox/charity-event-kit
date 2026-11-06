@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { champion, roundName, standings, winnerOf } from '@/lib/bracket';
 import { money } from '@/lib/format';
 import type { Bundle, Game, Player, Team } from '@/lib/types';
@@ -259,7 +260,7 @@ export function PledgeBoard({ bundle }: { bundle: Bundle }) {
                     <tr key={p.id}>
                       <td>{i + 1}</td>
                       <td>
-                        {p.name}
+                        <Link href={`/e/${bundle.event.slug}/p/${p.id}`}>{p.name}</Link>
                         {p.goal > 0 && (
                           <div className="progress" aria-label={`${Math.round((p.raised / p.goal) * 100)}% of goal`}>
                             <span style={{ width: `${Math.min(100, (p.raised / p.goal) * 100)}%` }} />
@@ -288,7 +289,7 @@ export function PledgeBoard({ bundle }: { bundle: Bundle }) {
                   {teams.map(({ t, raised }, i) => (
                     <tr key={t.id}>
                       <td>{i + 1}</td>
-                      <td>{t.name}</td>
+                      <td><Link href={`/e/${bundle.event.slug}/t/${t.id}`}>{t.name}</Link></td>
                       <td className="num">{money(raised)}</td>
                     </tr>
                   ))}
@@ -301,5 +302,31 @@ export function PledgeBoard({ bundle }: { bundle: Bundle }) {
         </div>
       </div>
     </>
+  );
+}
+
+/** Team fundraising race for tournaments and leaderboards (pledge events use PledgeBoard). */
+export function TeamMoneyRace({ bundle }: { bundle: Bundle }) {
+  const rows = activeTeams(bundle)
+    .map((t) => ({ t, sum: teamRaised(bundle, t) }))
+    .sort((a, b) => b.sum - a.sum);
+  const any = rows.some((r) => r.sum > 0 || r.t.goal > 0);
+  if (!any) return null;
+  const top = Math.max(1, ...rows.map((r) => Math.max(r.sum, r.t.goal)));
+  return (
+    <section className="card">
+      <h2>Team fundraising</h2>
+      {rows.map(({ t, sum }, i) => (
+        <div key={t.id} style={{ padding: '8px 0', borderTop: i ? '1px solid var(--line)' : 0 }}>
+          <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <Link href={`/e/${bundle.event.slug}/t/${t.id}`}><b>{i === 0 && sum > 0 ? '🏆 ' : ''}{t.name}</b></Link>
+            <span>{money(sum)}{t.goal > 0 && <span className="small muted"> of {money(t.goal)}</span>}</span>
+          </div>
+          <div className="thermo" aria-hidden="true" style={{ height: 10 }}>
+            <span style={{ width: `${Math.min(100, (sum / (t.goal || top)) * 100)}%` }} />
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '4';
+export const SCHEMA_VERSION = '5';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -127,4 +127,7 @@ export const SCHEMA: string[] = [
   // v4: live game status
   `ALTER TABLE games ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'scheduled'`,
   `UPDATE games SET status = 'final' WHERE status = 'scheduled' AND home_score IS NOT NULL AND away_score IS NOT NULL`,
+  // v5: personal and team pay links
+  `ALTER TABLE players ADD COLUMN IF NOT EXISTS pay_url TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE teams ADD COLUMN IF NOT EXISTS pay_url TEXT NOT NULL DEFAULT ''`,
 ];
