@@ -44,9 +44,9 @@ export const PRESETS: Preset[] = [
     // Matches Iowa Salutes Heroes: 6 branch teams, 96 players, 3 games + 4-team playoff.
     teamSize: 16,
     positions: [
-      { name: 'Goalie', perTeam: 2 },
+      { name: 'Goalie', perTeam: 1 },
       { name: 'Defense', perTeam: 5 },
-      { name: 'Forward', perTeam: 9 },
+      { name: 'Forward', perTeam: 10 },
     ],
     gamesPerTeam: 3,
     playoffTeams: 4,
