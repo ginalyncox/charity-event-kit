@@ -1,0 +1,98 @@
+# Builds the iPhone app on a cloud Mac and uploads it to TestFlight.
+# Run it from GitHub: Actions tab -> "iPhone app to TestFlight" -> Run workflow.
+#
+# Needs these repository secrets (Settings -> Secrets and variables -> Actions):
+#   APPLE_TEAM_ID       10-character Team ID from developer.apple.com -> Membership
+#   ASC_KEY_ID          App Store Connect API key ID
+#   ASC_ISSUER_ID       App Store Connect issuer ID
+#   ASC_KEY_P8_BASE64   The downloaded .p8 key file, base64-encoded
+name: iPhone app to TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App version shown in the App Store (for example 1.0)"
+        required: true
+        default: "1.0"
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Sync the iPhone project
+        run: npx cap sync ios
+
+      - name: Check secrets are set
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          missing=0
+          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_BASE64; do
+            if [ -z "${!v}" ]; then echo "::error::Missing secret $v"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Write the App Store Connect key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Build and upload to TestFlight
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          KEY="$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          AUTH=(-allowProvisioningUpdates
+                -authenticationKeyPath "$KEY"
+                -authenticationKeyID "$ASC_KEY_ID"
+                -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            "${AUTH[@]}" archive | tail -n 40
+
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" ExportOptions.plist
+
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist -exportPath "$RUNNER_TEMP/export" \
+            "${AUTH[@]}" | tail -n 40
+
+      - name: Clean up the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
+
+      - name: Summary
+        run: |
+          echo "### ✅ Build ${{ github.run_number }} (version ${{ inputs.version }}) sent to TestFlight" >> "$GITHUB_STEP_SUMMARY"
+          echo "Apple usually finishes processing in 10–30 minutes. Then it appears in the TestFlight app on your iPhone." >> "$GITHUB_STEP_SUMMARY"

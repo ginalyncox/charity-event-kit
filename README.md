@@ -81,3 +81,11 @@ not been written or reviewed yet; get a professional review before collecting
 real sign-ups.
 
 © 2026 Gina Makes LLC · Altoona, Iowa. All rights reserved.
+
+## iPhone app (TestFlight)
+
+- `capacitor.config.ts` wraps the live site (`eventkit.ginamakes.app`) in an iPhone app, bundle ID `app.ginamakes.eventkit`.
+- No Mac needed: `.github/workflows/ios-testflight.yml` builds on a GitHub cloud Mac and uploads to TestFlight.
+- Run it: GitHub → **Actions** → **iPhone app to TestFlight** → **Run workflow**.
+- Needs repository secrets: `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64`.
+- Note: web push alerts don't work inside the iPhone app yet; native alerts are a future step.
