@@ -237,3 +237,8 @@ a.event-card:hover { border-color: var(--accent); }
 .cal-num { font-size: 12px; font-weight: 700; color: var(--muted); }
 .cal-event { font-size: 11px; line-height: 1.25; background: var(--accent-soft); color: var(--accent); border-radius: 5px; padding: 2px 4px; text-decoration: none; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 560px) { .cal-day { min-height: 58px; } .cal-event { font-size: 10px; white-space: normal; } }
+
+.legal { max-width: 720px; margin: 0 auto; }
+.legal h2 { margin-top: 1.6rem; }
+.legal h3 { margin-top: 1rem; font-size: 1rem; }
+.legal li { margin-bottom: 6px; }

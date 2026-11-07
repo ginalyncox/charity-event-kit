@@ -35,6 +35,9 @@ export default async function SignupPage({ searchParams }: Props) {
             Password <span className="hint">At least 8 characters.</span>
             <input name="password" type="password" required minLength={8} autoComplete="new-password" />
           </label>
+          <p className="small muted" style={{ margin: 0 }}>
+            By creating an account you agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy policy</Link>.
+          </p>
           <button className="btn">Create account</button>
         </form>
       </div>

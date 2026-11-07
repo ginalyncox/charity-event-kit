@@ -53,7 +53,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <footer className="site-footer">
           <div className="wrap">
             <span>Charity Event Kit · A tool by Gina Makes — Games, tools, and curious creations.</span>
-            <span>© 2026 Gina Makes LLC · Altoona, Iowa</span>
+            <span>
+              <Link href="/privacy">Privacy</Link> · <Link href="/terms">Terms</Link> · <Link href="/support">Support</Link> · © 2026 Gina Makes LLC · Altoona, Iowa
+            </span>
           </div>
         </footer>
       </body>
