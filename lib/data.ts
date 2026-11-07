@@ -16,6 +16,9 @@ function toEvent(r: any): EventRow {
     owner_user_id: num(r.owner_user_id),
     fundraising_goal: Number(r.fundraising_goal ?? 0),
     copied_from: num(r.copied_from),
+    visibility: r.visibility === 'public' ? 'public' : 'private',
+    lat: num(r.lat),
+    lng: num(r.lng),
   };
 }
 
@@ -89,4 +92,35 @@ export async function getBundle(event: EventRow): Promise<Bundle> {
       }),
     ),
   };
+}
+
+export type ListedEvent = {
+  slug: string;
+  name: string;
+  charity: string;
+  event_date: string;
+  start_at: string;
+  end_at: string;
+  location: string;
+  kind: string;
+  sport: string;
+  lat: number | null;
+  lng: number | null;
+  signups_open: boolean;
+  people: number;
+};
+
+/** Public events, soonest first. Past events (more than a day ago) are left out unless asked. */
+export async function publicEvents(includePast = false): Promise<ListedEvent[]> {
+  const rows = await query<any>(
+    `SELECT e.slug, e.name, e.charity, e.event_date, e.start_at, e.end_at, e.location, e.kind, e.sport, e.lat, e.lng,
+            e.signups_open, (SELECT COUNT(*)::int FROM players p WHERE p.event_id = e.id) AS people
+     FROM events e
+     WHERE e.visibility = 'public'
+       AND ($1 OR e.start_at = '' OR COALESCE(NULLIF(e.end_at,''), e.start_at) >= to_char(now() - interval '1 day', 'YYYY-MM-DD'))
+     ORDER BY (e.start_at = ''), e.start_at, e.id DESC
+     LIMIT 500`,
+    [includePast],
+  );
+  return rows.map((r) => ({ ...r, lat: num(r.lat), lng: num(r.lng), people: Number(r.people) }));
 }

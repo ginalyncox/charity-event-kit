@@ -14,6 +14,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </p>
         <div className="btn-row">
           <Link href="/new" className="btn">Create an event</Link>
+          <Link href="/events" className="btn secondary">Browse events</Link>
           <a href="#how" className="btn secondary">How it works</a>
         </div>
       </section>

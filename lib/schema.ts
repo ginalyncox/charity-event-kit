@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '7';
+export const SCHEMA_VERSION = '8';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -220,4 +220,25 @@ export const SCHEMA: string[] = [
   // v7: a phone can follow several events
   `ALTER TABLE push_subs DROP CONSTRAINT IF EXISTS push_subs_pkey`,
   `CREATE UNIQUE INDEX IF NOT EXISTS push_subs_endpoint_event_idx ON push_subs(endpoint, event_id)`,
+  // v8: browse, calendar, near me, email verification, native push
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'private'`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS end_at TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS geo_for TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS email_tokens (
+    token_hash    TEXT PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS apns_tokens (
+    token         TEXT PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    team_id       INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS events_visibility_idx ON events(visibility, start_at)`,
 ];

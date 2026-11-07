@@ -225,3 +225,15 @@ details summary { cursor: pointer; font-weight: 700; }
   .card { box-shadow: none; break-inside: avoid; }
   main { padding: 0; }
 }
+
+/* Browse events */
+a.event-card { display: block; text-decoration: none; color: var(--ink); }
+a.event-card:hover { border-color: var(--accent); }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 12px; }
+.cal-head { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; text-transform: uppercase; padding: 4px 0; }
+.cal-day { min-height: 84px; border: 1px solid var(--line); border-radius: 8px; padding: 4px; background: var(--paper); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-day.empty { background: transparent; border-style: dashed; opacity: 0.5; }
+.cal-day.today { border-color: var(--accent); border-width: 2px; }
+.cal-num { font-size: 12px; font-weight: 700; color: var(--muted); }
+.cal-event { font-size: 11px; line-height: 1.25; background: var(--accent-soft); color: var(--accent); border-radius: 5px; padding: 2px 4px; text-decoration: none; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) { .cal-day { min-height: 58px; } .cal-event { font-size: 10px; white-space: normal; } }

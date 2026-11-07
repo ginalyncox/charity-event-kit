@@ -30,6 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
             </Link>
             <nav className="btn-row" style={{ gap: 8 }} aria-label="Account">
+              <Link href="/events" className="btn small secondary">Browse</Link>
               {user ? (
                 <>
                   <Link href="/account" className="btn small secondary">My events</Link>

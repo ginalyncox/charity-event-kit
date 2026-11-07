@@ -58,8 +58,21 @@ export default function NewEventForm() {
             <input name="event_date" maxLength={100} placeholder="May 21–23, 2027" />
           </label>
           <label>
-            Location
-            <input name="location" maxLength={200} placeholder="Rink name, city" />
+            Location <span className="hint">Include the city and state so people can find it nearby.</span>
+            <input name="location" maxLength={200} placeholder="Rink name, Des Moines, IA" />
+          </label>
+        </div>
+        <div className="row-2">
+          <label>
+            First day <span className="hint">For the calendar.</span>
+            <input name="start_at" type="date" />
+          </label>
+          <label>
+            Who can find it?
+            <select name="visibility" defaultValue="public">
+              <option value="public">Public — listed on Browse events</option>
+              <option value="private">Private — only people with the link</option>
+            </select>
           </label>
         </div>
         <label>

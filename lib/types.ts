@@ -35,6 +35,11 @@ export type EventRow = {
   jersey_sizes: string;
   pledges_open: boolean;
   copied_from: number | null;
+  visibility: 'public' | 'private';
+  end_at: string;
+  lat: number | null;
+  lng: number | null;
+  geo_for: string;
 };
 
 /** The public view never includes the organizer key. */

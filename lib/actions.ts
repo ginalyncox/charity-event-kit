@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { notifyEvent } from './push';
+import { geocodeEvent } from './geo';
 import { revalidatePath } from 'next/cache';
 import { one, query } from './db';
 import { getBundle, getEventBySlug } from './data';
@@ -102,6 +103,15 @@ export async function createEvent(fd: FormData) {
       user.id,
     ],
   );
+
+  const startAt = text(fd.get('start_at'), 10);
+  await query('UPDATE events SET visibility=$1, start_at=$2 WHERE id=$3', [
+    text(fd.get('visibility'), 10) === 'public' ? 'public' : 'private',
+    /^\d{4}-\d{2}-\d{2}$/.test(startAt) ? startAt : '',
+    ev!.id,
+  ]);
+  const loc = text(fd.get('location'), 200);
+  if (loc) after(() => geocodeEvent(ev!.id, loc));
 
   if (teamMode === 'set') {
     let i = 0;
@@ -362,7 +372,7 @@ export async function updateSettings(fd: FormData) {
        team_fee=$7, solo_fee=$8, payment_url=$9, team_size=$10, games_per_team=$11, playoff_teams=$12,
        score_label=$13, score_order=$14, pledge_unit=$15,
        stream_url=$17, fundraising_goal=$18, sponsors=$19, waiver_text=$20, start_at=$21,
-       pledges_open=$22, jersey_sizes=$23
+       pledges_open=$22, jersey_sizes=$23, visibility=$24, end_at=$25
      WHERE id=$16`,
     [
       text(fd.get('name'), 120) || event.name,
@@ -388,9 +398,14 @@ export async function updateSettings(fd: FormData) {
       fd.has('start_at') ? (/^\d{4}-\d{2}-\d{2}$/.test(text(fd.get('start_at'), 10)) ? text(fd.get('start_at'), 10) : '') : event.start_at,
       fd.has('pledges_form') ? fd.get('pledges_open') === 'on' : event.pledges_open,
       fd.has('jersey_sizes') ? text(fd.get('jersey_sizes'), 200) : event.jersey_sizes,
+      fd.has('visibility') ? (text(fd.get('visibility'), 10) === 'public' ? 'public' : 'private') : event.visibility,
+      fd.has('end_at') ? (/^\d{4}-\d{2}-\d{2}$/.test(text(fd.get('end_at'), 10)) ? text(fd.get('end_at'), 10) : '') : event.end_at,
     ],
   );
+  const loc = text(fd.get('location'), 200);
+  if (loc !== event.geo_for) after(() => geocodeEvent(event.id, loc));
   refresh(event);
+  revalidatePath('/events');
   redirect(manageUrl(event, 'Settings saved', 'settings'));
 }
 

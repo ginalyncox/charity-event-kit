@@ -682,7 +682,15 @@ function Settings({ bundle, admins }: { bundle: Bundle; admins: { email: string;
           <label>Raising money for<input name="charity" defaultValue={event.charity} maxLength={200} /></label>
           <div className="row-2">
             <label>Date (as shown)<input name="event_date" defaultValue={event.event_date} maxLength={100} /></label>
-            <label>First day <span className="hint">For “Add to calendar.”</span><input name="start_at" type="date" defaultValue={event.start_at} /></label>
+            <label>First day <span className="hint">For the calendar.</span><input name="start_at" type="date" defaultValue={event.start_at} /></label>
+            <label>Last day <span className="hint">Leave blank for one day.</span><input name="end_at" type="date" defaultValue={event.end_at} /></label>
+            <label>
+              Who can find it?
+              <select name="visibility" defaultValue={event.visibility}>
+                <option value="public">Public — listed on Browse events</option>
+                <option value="private">Private — only people with the link</option>
+              </select>
+            </label>
             <label>Location<input name="location" defaultValue={event.location} maxLength={200} /></label>
           </div>
           <label>Organizer email<input name="contact_email" type="email" defaultValue={event.contact_email} maxLength={200} /></label>
