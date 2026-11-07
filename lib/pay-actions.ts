@@ -64,8 +64,7 @@ export async function connectStripe(fd: FormData) {
         account: accountId,
         use_case: {
           type: 'account_onboarding',
-          // Stripe's guide asks for `configurations`; this SDK version's types don't list it yet.
-          account_onboarding: { configurations: ['merchant', 'customer'], refresh_url: back, return_url: back } as never,
+          account_onboarding: { refresh_url: back, return_url: back },
         },
       });
       url = link.url;
