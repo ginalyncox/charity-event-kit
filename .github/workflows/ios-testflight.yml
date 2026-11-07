@@ -32,6 +32,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Use Xcode 26 (Apple requires the iOS 26 SDK for uploads)
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$X" ]; then echo "::error::No Xcode 26 on this runner"; exit 1; fi
+          sudo xcode-select -s "$X/Contents/Developer"
+          xcodebuild -version
+
       - name: Install
         run: npm ci
 
