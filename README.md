@@ -72,7 +72,7 @@ With no `DATABASE_URL`, the app uses an embedded database stored in `./.data/`.
 1. Import this repo into Vercel.
 2. Add `DATABASE_URL` (a Neon Postgres connection string) as an environment variable.
 3. Deploy. Tables are created automatically on first request.
-4. Add the custom domain (an `appname.ginamakes.app` subdomain) when ready.
+4. Live at https://eventkit.ginamakes.app (CNAME `eventkit` in Squarespace DNS → Vercel).
 
 ## Status
 
