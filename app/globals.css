@@ -57,11 +57,18 @@ p { margin: 0 0 0.75rem; }
 .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
 
 .site-header { border-bottom: 1px solid var(--line); background: var(--card); }
-.site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 60px; }
+.site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; padding-top: 8px; padding-bottom: 8px; flex-wrap: wrap; }
+.site-header nav { flex-wrap: nowrap; }
+@media (max-width: 520px) {
+  .brand { font-size: 15px; }
+  .brand small { font-size: 11px; }
+  .site-header nav .btn.small { padding: 7px 10px; font-size: 14px; }
+}
+@media (max-width: 380px) { .brand > span:last-child { display: none; } }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 800; }
 .brand-mark {
   width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: var(--accent-ink);
-  display: grid; place-items: center; font-size: 15px; font-weight: 900;
+  display: block; flex-shrink: 0;
 }
 .brand small { display: block; font-weight: 500; color: var(--muted); font-size: 12px; line-height: 1; }
 

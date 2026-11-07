@@ -23,7 +23,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <header className="site-header">
           <div className="wrap">
             <Link href="/" className="brand" aria-label="Charity Event Kit home">
-              <span className="brand-mark" aria-hidden="true">CE</span>
+              <img className="brand-mark" src="/icons/192" alt="" width={32} height={32} />
               <span>
                 Charity Event Kit
                 <small>by Gina Makes</small>
