@@ -10,6 +10,7 @@ import type { Bundle, Player } from '@/lib/types';
 import ConfirmButton from '@/app/ConfirmButton';
 import AutoRefresh from '@/app/AutoRefresh';
 import { cancelMySignup, updateMySignup, updateMyTeam } from '@/lib/actions';
+import { resendVerification } from '@/lib/auth-actions';
 import { GameLine, playoffRoundLabel, rankTeams, rosterOf, teamName } from '@/app/ui';
 
 export const metadata: Metadata = { title: 'My events', robots: { index: false } };
@@ -47,6 +48,16 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       </div>
       <AutoRefresh seconds={30} />
       {sp.msg && <div className="notice good" role="status">{sp.msg}</div>}
+      {!user.verified && (
+        <div className="notice info">
+          <form action={resendVerification} className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <span>
+              <b>Confirm your email</b> ({user.email}) to connect events you signed up for before you had an account.
+            </span>
+            <button className="btn small secondary">Send confirmation email</button>
+          </form>
+        </div>
+      )}
 
       <History bundles={playingBundles} userId={user.id} volunteered={Number(vol[0]?.n ?? 0)} organized={ownedBundles.length} />
 

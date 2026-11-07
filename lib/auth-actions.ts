@@ -5,7 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { one, query } from './db';
 import { allow, clearHits, clientIp, recordHit } from './ratelimit';
 import { mailConfigured, sendMail, siteOrigin } from './mail';
-import { endSession, hashPassword, linkSignupsByEmail, normalizeEmail, startSession, verifyPassword } from './auth';
+import { currentUser, endSession, hashPassword, linkSignupsByEmail, normalizeEmail, sendVerification, startSession, verifyPassword } from './auth';
 import { text } from './format';
 
 /** Only allow redirects back into this site. */
@@ -41,7 +41,8 @@ export async function signUp(fd: FormData) {
     [email, name, await hashPassword(password)],
   );
   const id = Number(user!.id);
-  await linkSignupsByEmail({ id, email, name });
+  // Earlier sign-ups with this email connect once the email is confirmed.
+  await sendVerification({ id, email, name });
   await startSession(id);
   redirect(next);
 }
@@ -58,8 +59,8 @@ export async function logIn(fd: FormData) {
     back('/login', 'Too many tries. Please wait 15 minutes, or reset your password.', next, email);
   }
 
-  const user = await one<{ id: number; name: string; password_hash: string }>(
-    'SELECT id, name, password_hash FROM users WHERE email = $1',
+  const user = await one<{ id: number; name: string; password_hash: string; email_verified_at: string | null }>(
+    'SELECT id, name, password_hash, email_verified_at FROM users WHERE email = $1',
     [email],
   );
   // Same message either way, so the form doesn't reveal who has an account.
@@ -70,7 +71,7 @@ export async function logIn(fd: FormData) {
   }
   await clearHits(emailBucket);
   const id = Number(user.id);
-  await linkSignupsByEmail({ id, email, name: user.name });
+  if (user.email_verified_at) await linkSignupsByEmail({ id, email });
   await startSession(id);
   redirect(next);
 }
@@ -122,10 +123,26 @@ export async function resetPassword(fd: FormData) {
   );
   if (!row) redirect('/forgot?status=expired');
   const userId = Number(row.user_id);
-  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [await hashPassword(password), userId]);
+  // Clicking a reset link from your inbox also proves you own the email.
+  await query('UPDATE users SET password_hash = $1, email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $2', [
+    await hashPassword(password),
+    userId,
+  ]);
   await query('DELETE FROM sessions WHERE user_id = $1', [userId]); // log out everywhere else
   const u = await one<{ email: string }>('SELECT email FROM users WHERE id = $1', [userId]);
-  if (u) await clearHits(`login:${u.email}`);
+  if (u) {
+    await clearHits(`login:${u.email}`);
+    await linkSignupsByEmail({ id: userId, email: u.email });
+  }
   await startSession(userId);
   redirect('/account?msg=Password+updated');
+}
+
+export async function resendVerification() {
+  const user = await currentUser();
+  if (!user) redirect('/login?next=/account');
+  if (user.verified) redirect('/account?msg=Your+email+is+already+confirmed');
+  if (!(await allow(`verify:${user.id}`, 3, 60))) redirect('/account?msg=We+just+sent+one.+Check+your+inbox+and+spam+folder.');
+  const ok = await sendVerification(user);
+  redirect(`/account?msg=${encodeURIComponent(ok ? `Confirmation email sent to ${user.email}.` : 'Email isn’t switched on yet. Try again later.')}`);
 }
