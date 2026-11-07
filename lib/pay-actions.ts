@@ -9,7 +9,7 @@ import { getEventBySlug } from './data';
 import { money, text, toCents, toInt } from './format';
 import { siteOrigin } from './mail';
 import { allow, clientIp } from './ratelimit';
-import { MAX_GIFT, MIN_GIFT, stripe, stripeConfigured } from './stripe';
+import { MAX_GIFT, MIN_GIFT, cardsActive, stripe, stripeConfigured } from './stripe';
 import type { EventRow } from './types';
 
 function manageMoney(e: EventRow, msg: string): string {
@@ -37,10 +37,16 @@ export async function connectStripe(fd: FormData) {
   let url = '';
   try {
     if (!accountId) {
-      const account = await stripe().accounts.create({
-        type: 'standard',
-        email: user?.email || event.contact_email || undefined,
-        business_profile: { name: event.charity || event.name },
+      // Stripe's current way to create a connected account (Accounts v2).
+      // The organizer gets the full Stripe dashboard, and Stripe (not Gina Makes)
+      // collects fees and covers losses, so the money never touches the platform.
+      const account = await stripe().v2.core.accounts.create({
+        display_name: (event.charity || event.name).slice(0, 100),
+        contact_email: user?.email || event.contact_email || undefined,
+        identity: { country: 'us' },
+        dashboard: 'full',
+        defaults: { responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' } },
+        configuration: { customer: {}, merchant: { capabilities: { card_payments: { requested: true } } } },
         metadata: { event_slug: event.slug },
       });
       accountId = account.id;
@@ -49,17 +55,18 @@ export async function connectStripe(fd: FormData) {
     if (user && !saved?.stripe_account_id) {
       await query('UPDATE users SET stripe_account_id=$1 WHERE id=$2', [accountId, user.id]);
     }
-    const account = await stripe().accounts.retrieve(accountId);
-    if (account.charges_enabled) {
+    if (await cardsActive(accountId)) {
       await query('UPDATE events SET stripe_ready=TRUE WHERE id=$1', [event.id]);
     } else {
       const origin = await siteOrigin();
       const back = `${origin}/manage/${event.slug}?key=${encodeURIComponent(event.admin_key)}&tab=money&stripe=back`;
-      const link = await stripe().accountLinks.create({
+      const link = await stripe().v2.core.accountLinks.create({
         account: accountId,
-        type: 'account_onboarding',
-        refresh_url: back,
-        return_url: back,
+        use_case: {
+          type: 'account_onboarding',
+          // Stripe's guide asks for `configurations`; this SDK version's types don't list it yet.
+          account_onboarding: { configurations: ['merchant', 'customer'], refresh_url: back, return_url: back } as never,
+        },
       });
       url = link.url;
     }

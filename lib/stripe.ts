@@ -20,17 +20,10 @@ export function stripe(): Stripe {
   return client;
 }
 
-export type AccountStatus = 'none' | 'setup' | 'ready';
-
-/** Whether a connected account can take card payments yet. */
-export async function accountStatus(accountId: string): Promise<AccountStatus> {
-  if (!accountId || !stripeConfigured()) return 'none';
-  try {
-    const a = await stripe().accounts.retrieve(accountId);
-    return a.charges_enabled ? 'ready' : 'setup';
-  } catch {
-    return 'none';
-  }
+/** True when the connected account can take card payments (Accounts v2). */
+export async function cardsActive(accountId: string): Promise<boolean> {
+  const account = await stripe().v2.core.accounts.retrieve(accountId, { include: ['configuration.merchant', 'requirements'] });
+  return account.configuration?.merchant?.capabilities?.card_payments?.status === 'active';
 }
 
 /** Smallest and largest gift, in cents. */
@@ -41,8 +34,7 @@ export const MAX_GIFT = 1_000_000;
 export async function refreshStripeStatus(event: EventRow): Promise<boolean> {
   if (!event.stripe_account_id || !stripeConfigured()) return false;
   try {
-    const a = await stripe().accounts.retrieve(event.stripe_account_id);
-    const ready = Boolean(a.charges_enabled);
+    const ready = await cardsActive(event.stripe_account_id);
     if (ready !== event.stripe_ready) {
       await query('UPDATE events SET stripe_ready=$1 WHERE id=$2', [ready, event.id]);
       revalidatePath(`/e/${event.slug}`);
