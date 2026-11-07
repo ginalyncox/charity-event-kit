@@ -56,7 +56,7 @@ Charity Event Kit never holds money. Organizers paste their own payment link
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Turns on push alerts |
 | `SITE_URL` | Optional: the public address used in emails |
 
-Not built yet: email verification.
+| `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8_BASE64` | Turns on native iPhone alerts (APNs auth key) |
 
 ## Run locally
 
@@ -88,4 +88,4 @@ real sign-ups.
 - No Mac needed: `.github/workflows/ios-testflight.yml` builds on a GitHub cloud Mac and uploads to TestFlight.
 - Run it: GitHub → **Actions** → **iPhone app to TestFlight** → **Run workflow**.
 - Needs repository secrets: `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64`.
-- Note: web push alerts don't work inside the iPhone app yet; native alerts are a future step.
+- Native iPhone alerts use APNs; they turn on once the APNs key settings are added in Vercel.

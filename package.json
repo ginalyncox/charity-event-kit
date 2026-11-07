@@ -11,6 +11,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@capacitor/core": "^7.6.10",
+    "@capacitor/push-notifications": "^7.0.7",
     "@electric-sql/pglite": "^0.5.15",
     "@neondatabase/serverless": "^0.10.4",
     "next": "^15.5.29",

@@ -10,6 +10,26 @@ function keyBytes(base64: string): Uint8Array {
 
 type State = 'loading' | 'unsupported' | 'ios-install' | 'off' | 'on' | 'blocked' | 'error';
 
+/** The iPhone app (Capacitor) exposes native push here. */
+function nativePush(): any | null {
+  const cap = (window as any).Capacitor;
+  return cap?.isNativePlatform?.() && cap?.Plugins?.PushNotifications ? cap.Plugins.PushNotifications : null;
+}
+
+function nativeToken(push: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    push.addListener('registration', (t: { value: string }) => {
+      if (!done) { done = true; resolve(t.value); }
+    });
+    push.addListener('registrationError', (e: any) => {
+      if (!done) { done = true; reject(e); }
+    });
+    push.register();
+    setTimeout(() => { if (!done) { done = true; reject(new Error('timeout')); } }, 15000);
+  });
+}
+
 /** "Get alerts" for an event or one team: game starts, goals, and finals. */
 export default function AlertsButton({ slug, teams, publicKey }: { slug: string; teams: { id: number; name: string }[]; publicKey: string }) {
   const [state, setState] = useState<State>('loading');
@@ -17,6 +37,12 @@ export default function AlertsButton({ slug, teams, publicKey }: { slug: string;
   const storeKey = `cek-alerts-${slug}`;
 
   useEffect(() => {
+    if (nativePush()) {
+      let saved = '';
+      try { saved = localStorage.getItem(storeKey) ?? ''; } catch {}
+      if (saved) { setTeamId(saved === 'all' ? '' : saved); setState('on'); } else setState('off');
+      return;
+    }
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -40,6 +66,24 @@ export default function AlertsButton({ slug, teams, publicKey }: { slug: string;
   }, [storeKey]);
 
   async function turnOn() {
+    const push = nativePush();
+    if (push) {
+      try {
+        const perm = await push.requestPermissions();
+        if (perm.receive !== 'granted') return setState('blocked');
+        const token = await nativeToken(push);
+        const res = await fetch('/api/push/apns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, teamId: teamId || null, token }),
+        });
+        if (!res.ok) throw new Error('save failed');
+        try { localStorage.setItem(storeKey, teamId || 'all'); localStorage.setItem('cek-apns-token', token); } catch {}
+        return setState('on');
+      } catch {
+        return setState('error');
+      }
+    }
     try {
       const reg = await navigator.serviceWorker.register('/sw.js');
       const perm = await Notification.requestPermission();
@@ -63,6 +107,12 @@ export default function AlertsButton({ slug, teams, publicKey }: { slug: string;
   }
 
   async function turnOff() {
+    if (nativePush()) {
+      let token = '';
+      try { token = localStorage.getItem('cek-apns-token') ?? ''; localStorage.removeItem(storeKey); } catch {}
+      if (token) await fetch('/api/push/apns', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug, token }) }).catch(() => {});
+      return setState('off');
+    }
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();

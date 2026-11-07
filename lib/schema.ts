@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '8';
+export const SCHEMA_VERSION = '9';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -241,4 +241,7 @@ export const SCHEMA: string[] = [
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS events_visibility_idx ON events(visibility, start_at)`,
+  // v9: one iPhone can follow several events
+  `ALTER TABLE apns_tokens DROP CONSTRAINT IF EXISTS apns_tokens_pkey`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS apns_tokens_token_event_idx ON apns_tokens(token, event_id)`,
 ];

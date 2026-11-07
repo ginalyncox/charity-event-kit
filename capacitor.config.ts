@@ -14,6 +14,9 @@ const config: CapacitorConfig = {
     errorPath: 'index.html',
     allowNavigation: ['eventkit.ginamakes.app'],
   },
+  plugins: {
+    PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
+  },
   ios: {
     contentInset: 'automatic',
     backgroundColor: '#f7f4ee',
