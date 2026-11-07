@@ -58,7 +58,7 @@ export async function getEventBySlug(slug: string): Promise<EventRow | null> {
 }
 
 export async function getBundle(event: EventRow): Promise<Bundle> {
-  const [teams, players, games, pledges, auction] = await Promise.all([
+  const [teams, players, games, pledges, auction, general] = await Promise.all([
     query('SELECT * FROM teams WHERE event_id = $1 ORDER BY sort_order, id', [event.id]),
     query('SELECT * FROM players WHERE event_id = $1 ORDER BY id', [event.id]),
     query('SELECT * FROM games WHERE event_id = $1 ORDER BY stage DESC, round, slot, id', [event.id]),
@@ -72,9 +72,15 @@ export async function getBundle(event: EventRow): Promise<Bundle> {
        WHERE i.event_id = $1 ORDER BY i.id`,
       [event.id],
     ),
+    query(
+      `SELECT COALESCE(SUM(amount),0)::int AS n FROM online_payments
+       WHERE event_id=$1 AND kind='donation' AND team_id IS NULL AND player_id IS NULL`,
+      [event.id],
+    ),
   ]);
   return {
     event,
+    onlineGeneral: Number(general[0]?.n ?? 0),
     teams: teams.map(toTeam),
     players: players.map(toPlayer),
     games: games.map(toGame),

@@ -40,6 +40,9 @@ export type EventRow = {
   lat: number | null;
   lng: number | null;
   geo_for: string;
+  stripe_account_id: string;
+  /** True once the connected Stripe account can take cards. */
+  stripe_ready: boolean;
 };
 
 /** The public view never includes the organizer key. */
@@ -139,4 +142,6 @@ export type Bundle = {
   games: Game[];
   pledges: GoalPledge[];
   auction: AuctionItem[];
+  /** Card gifts to the event as a whole (not to a team or person), in cents. */
+  onlineGeneral: number;
 };

@@ -249,3 +249,10 @@ a.event-card:hover { border-color: var(--accent); }
 .legal h2 { margin-top: 1.6rem; }
 .legal h3 { margin-top: 1rem; font-size: 1rem; }
 .legal li { margin-bottom: 6px; }
+
+/* Give by card */
+.give-card { display: grid; gap: 10px; margin-top: 8px; }
+.give-card .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
+.give-card .chip input[type='radio'] { width: auto; margin: 0; }
+.give-card .chip input:not([type='radio']) { padding: 4px 6px; }
+.give-card .chip:has(input[type='radio']:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }

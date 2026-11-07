@@ -1,5 +1,5 @@
 // Bump SCHEMA_VERSION whenever SCHEMA changes so existing databases upgrade.
-export const SCHEMA_VERSION = '9';
+export const SCHEMA_VERSION = '10';
 
 // Each statement runs separately (Neon's HTTP driver takes one statement per call).
 export const SCHEMA: string[] = [
@@ -244,4 +244,19 @@ export const SCHEMA: string[] = [
   // v9: one iPhone can follow several events
   `ALTER TABLE apns_tokens DROP CONSTRAINT IF EXISTS apns_tokens_pkey`,
   `CREATE UNIQUE INDEX IF NOT EXISTS apns_tokens_token_event_idx ON apns_tokens(token, event_id)`,
+  // v10: card payments through Stripe Connect
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS stripe_account_id TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS stripe_ready BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_account_id TEXT NOT NULL DEFAULT ''`,
+  `CREATE TABLE IF NOT EXISTS online_payments (
+    session_id    TEXT PRIMARY KEY,
+    event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    kind          TEXT NOT NULL CHECK (kind IN ('entry','donation')),
+    team_id       INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+    player_id     INTEGER REFERENCES players(id) ON DELETE SET NULL,
+    amount        INTEGER NOT NULL,
+    donor_name    TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS online_payments_event_idx ON online_payments(event_id)`,
 ];

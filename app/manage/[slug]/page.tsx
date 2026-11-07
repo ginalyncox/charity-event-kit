@@ -49,6 +49,8 @@ import { mailConfigured } from '@/lib/mail';
 import { nextBid, pledgeOwed, pledgeTotals } from '@/lib/pledges';
 import { getAwards, getShifts, type Award, type Shift } from '@/lib/extras';
 import ConfirmButton from '@/app/ConfirmButton';
+import { connectStripe, disconnectStripe } from '@/lib/pay-actions';
+import { refreshStripeStatus, stripeConfigured } from '@/lib/stripe';
 import type { Bundle, EventRow } from '@/lib/types';
 import {
   activeTeams,
@@ -157,12 +159,91 @@ export default async function ManagePage({ params, searchParams }: Props) {
       {tab === 'results' && <Results bundle={bundle} />}
       {tab === 'settings' && <Settings bundle={bundle} admins={admins} />}
       {tab === 'checkin' && <CheckIn bundle={bundle} q={sp.q ?? ''} />}
+      {tab === 'money' && <CardPayments event={event} />}
       {tab === 'money' && <Fundraising bundle={bundle} />}
       {tab === 'auction' && <Auction bundle={bundle} />}
       {tab === 'volunteers' && <Volunteers event={event} shifts={await getShifts(event.id)} />}
       {tab === 'awards' && <Awards event={event} awards={await getAwards(event.id)} />}
       {tab === 'message' && <Message bundle={bundle} />}
     </>
+  );
+}
+
+/* ---------------- Card payments (Stripe Connect) ---------------- */
+
+async function CardPayments({ event }: { event: EventRow }) {
+  if (!stripeConfigured()) {
+    return (
+      <div className="card">
+        <h2>Card payments</h2>
+        <p className="muted">Card payments aren’t switched on for Charity Event Kit yet. Use your payment link for now.</p>
+      </div>
+    );
+  }
+  const ready = event.stripe_account_id ? await refreshStripeStatus(event) : false;
+  const recent = ready
+    ? await query<{ session_id: string; kind: string; amount: number; donor_name: string; created_at: string; who: string | null }>(
+        `SELECT o.session_id, o.kind, o.amount, o.donor_name, o.created_at, COALESCE(p.name, t.name) AS who
+         FROM online_payments o LEFT JOIN players p ON p.id = o.player_id LEFT JOIN teams t ON t.id = o.team_id
+         WHERE o.event_id = $1 ORDER BY o.created_at DESC LIMIT 25`,
+        [event.id],
+      )
+    : [];
+  const total = recent.reduce((s, r) => s + Number(r.amount), 0);
+  return (
+    <div className="card">
+      <h2>Card payments</h2>
+      {ready ? (
+        <>
+          <p>
+            <span className="pill good">On</span> People can pay entry fees and give by card. Money goes straight to your Stripe
+            account. Entry fees are marked paid and gifts are added to totals automatically.
+          </p>
+          {recent.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>When</th><th>What</th><th>For</th><th>From</th><th style={{ textAlign: 'right' }}>Amount</th></tr>
+                </thead>
+                <tbody>
+                  {recent.map((r) => (
+                    <tr key={r.session_id}>
+                      <td>{new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                      <td>{r.kind === 'entry' ? 'Entry fee' : 'Gift'}</td>
+                      <td>{r.who ?? 'Event'}</td>
+                      <td>{r.donor_name || '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{money(Number(r.amount))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="small muted">No card payments yet.</p>
+          )}
+          {recent.length > 0 && <p className="small muted">Latest {recent.length} payments: {money(total)}. See every payment and payout in your Stripe dashboard.</p>}
+          <form action={disconnectStripe} className="btn-row">
+            <Auth e={event} />
+            <ConfirmButton className="btn small secondary" message="Turn off card payments for this event? Your Stripe account stays yours.">
+              Turn off card payments
+            </ConfirmButton>
+          </form>
+        </>
+      ) : (
+        <>
+          <p>
+            Let people pay entry fees and give by card. You connect your own (free) Stripe account, and the money goes straight
+            to you. Stripe charges about 2.9% + 30¢ per payment. Entry fees get marked paid automatically.
+          </p>
+          {event.stripe_account_id && <p className="small"><span className="pill warn">Setup not finished</span> Stripe still needs a few details.</p>}
+          <form action={connectStripe}>
+            <Auth e={event} />
+            <button className="btn">{event.stripe_account_id ? 'Finish Stripe setup' : 'Connect Stripe'}</button>
+          </form>
+          <p className="small muted" style={{ marginTop: 8 }}>Already have Stripe? You can log in to it during setup.</p>
+        </>
+      )}
+    </div>
   );
 }
 

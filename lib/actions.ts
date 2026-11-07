@@ -193,7 +193,7 @@ export async function registerTeam(fd: FormData) {
   }
 
   refresh(event);
-  redirect(`/e/${event.slug}?joined=team&who=${encodeURIComponent(teamName)}`);
+  redirect(`/e/${event.slug}?joined=team&who=${encodeURIComponent(teamName)}&tid=${team!.id}`);
 }
 
 export async function registerSolo(fd: FormData) {
@@ -233,7 +233,7 @@ export async function registerSolo(fd: FormData) {
   await runBalance(event, true);
 
   refresh(event);
-  redirect(`/e/${event.slug}?joined=solo&who=${encodeURIComponent(name)}`);
+  redirect(`/e/${event.slug}?joined=solo&who=${encodeURIComponent(name)}&pid=${inserted!.id}`);
 }
 
 /* ---------- organizer: balancing & rosters ---------- */

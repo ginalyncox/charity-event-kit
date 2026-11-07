@@ -238,7 +238,7 @@ export function totalRaised(bundle: Bundle): number {
   const people = bundle.teams.reduce((s, t) => s + t.raised, 0) + bundle.players.reduce((s, p) => s + p.raised, 0);
   const pledges = pledgeTotals(bundle).paid;
   const auction = bundle.auction.filter((i) => i.paid && i.high_bid).reduce((s, i) => s + (i.high_bid ?? 0), 0);
-  return people + pledges + auction;
+  return people + pledges + auction + (bundle.onlineGeneral ?? 0);
 }
 
 export function PledgeBoard({ bundle }: { bundle: Bundle }) {

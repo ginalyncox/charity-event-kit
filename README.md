@@ -22,8 +22,10 @@ A tool by **Gina Makes** — Games, tools, and curious creations.
 
 ## Money
 
-Charity Event Kit never holds money. Organizers paste their own payment link
-(Zeffy, RegFox, Givebutter, and so on) and tap **Mark paid**.
+Charity Event Kit never holds money. Organizers can:
+
+- **Connect Stripe** (Fundraising tab): people pay entry fees and give by card; money goes straight to the organizer's own Stripe account. Entry fees are marked paid and gifts are added to totals automatically. No platform fee.
+- Or paste their own payment link (Zeffy, RegFox, Givebutter, and so on) and tap **Mark paid**.
 
 ## Accounts
 
@@ -57,6 +59,7 @@ Charity Event Kit never holds money. Organizers paste their own payment link
 | `SITE_URL` | Optional: the public address used in emails |
 
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_P8_BASE64` | Turns on native iPhone alerts (APNs auth key) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Turns on card payments (Stripe Connect; webhook listens to connected accounts at `/api/stripe/webhook`) |
 
 ## Run locally
 

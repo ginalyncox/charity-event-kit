@@ -1,12 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import GiveByCard from '@/app/GiveByCard';
+import { stripeConfigured } from '@/lib/stripe';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import { hostOf, money } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
-type Props = { params: Promise<{ slug: string; id: string }> };
+type Props = { params: Promise<{ slug: string; id: string }>; searchParams?: Promise<Record<string, string | undefined>> };
 
 async function load(slug: string, id: string) {
   const event = await getEventBySlug(slug);
@@ -27,8 +29,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /** A personal page people can share: "Support me in this event." */
-export default async function PersonalPage({ params }: Props) {
+export default async function PersonalPage({ params, searchParams }: Props) {
   const { slug, id } = await params;
+  const sp = (await searchParams) ?? {};
   const d = await load(slug, id);
   if (!d) notFound();
   const { event, bundle, player } = d;
@@ -40,6 +43,8 @@ export default async function PersonalPage({ params }: Props) {
   return (
     <div style={{ maxWidth: 620, margin: '0 auto' }}>
       <p className="eyebrow">{event.name}</p>
+      {sp.paid && <div className="notice good" role="status">Thank you for your gift! It shows in the total within a minute.</div>}
+      {sp.err && <div className="notice warn">{sp.err}</div>}
       <h1>Support {player.name}</h1>
       <p className="lead muted">
         {player.name} is {event.kind === 'pledge' ? 'raising money' : 'playing'}
@@ -60,7 +65,16 @@ export default async function PersonalPage({ params }: Props) {
             <span style={{ width: `${pct}%` }} />
           </div>
         )}
-        {giveUrl ? (
+        {stripeConfigured() && event.stripe_ready && event.stripe_account_id ? (
+          <>
+            <GiveByCard slug={event.slug} back={`/e/${event.slug}/p/${player.id}`} playerId={player.id} label={`Give to support ${player.name}`} />
+            {player.pay_url && (
+              <p className="small muted" style={{ marginTop: 8 }}>
+                Or give through <a href={player.pay_url} target="_blank" rel="noopener noreferrer">{hostOf(player.pay_url)}</a>.
+              </p>
+            )}
+          </>
+        ) : giveUrl ? (
           <>
             <a className="btn" href={giveUrl} target="_blank" rel="noopener noreferrer">Give to support {player.name}</a>
             <p className="small muted" style={{ marginTop: 8 }}>

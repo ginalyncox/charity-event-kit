@@ -10,6 +10,9 @@ import Link from 'next/link';
 import AutoRefresh from '@/app/AutoRefresh';
 import AlertsButton from '@/app/AlertsButton';
 import StreamBox from '@/app/StreamBox';
+import GiveByCard from '@/app/GiveByCard';
+import { payEntry } from '@/lib/pay-actions';
+import { stripeConfigured } from '@/lib/stripe';
 import { money } from '@/lib/format';
 import { parseSponsors } from '@/lib/sponsors';
 import { ChampionBanner, Leaderboard, PledgeBoard, Rosters, Schedule, StandingsTable, TeamMoneyRace, totalRaised } from '@/app/ui';
@@ -131,6 +134,11 @@ export default async function EventPage({ params, searchParams }: Props) {
     ? `${bundle.teams.find((t) => t.id === liveGame.home_team_id)?.name ?? ''} vs ${bundle.teams.find((t) => t.id === liveGame.away_team_id)?.name ?? ''}`
     : '';
   const isPledge = event.kind === 'pledge';
+  const cardOn = stripeConfigured() && event.stripe_ready && Boolean(event.stripe_account_id);
+  // After sign-up: who to pay for, and how much.
+  const joinedTeamId = sp.joined === 'team' ? Number(sp.tid) || 0 : 0;
+  const joinedPlayerId = sp.joined === 'solo' ? Number(sp.pid) || 0 : 0;
+  const entryFee = joinedTeamId ? event.team_fee : joinedPlayerId ? event.solo_fee : 0;
 
   // Team choices for solo players.
   const choices =
@@ -165,13 +173,31 @@ export default async function EventPage({ params, searchParams }: Props) {
             <b>You’re in{sp.who ? `, ${sp.who}` : ''}!</b>{' '}
             {sp.joined === 'solo' ? 'Your team is shown below.' : 'Your team is on the list below.'}
           </p>
-          {event.payment_url && (
-            <p style={{ margin: '8px 0 0' }}>
-              <a className="btn" href={event.payment_url} target="_blank" rel="noopener noreferrer">
-                {isPledge ? 'Give or pay your entry' : 'Pay your entry fee'}
-              </a>
-            </p>
+          {cardOn && entryFee >= 50 ? (
+            <form action={payEntry} style={{ margin: '8px 0 0' }}>
+              <input type="hidden" name="slug" value={event.slug} />
+              <input type="hidden" name="what" value={joinedTeamId ? 'team' : 'player'} />
+              <input type="hidden" name="id" value={joinedTeamId || joinedPlayerId} />
+              <button className="btn">Pay {money(entryFee)} entry fee by card</button>
+            </form>
+          ) : (
+            event.payment_url && (
+              <p style={{ margin: '8px 0 0' }}>
+                <a className="btn" href={event.payment_url} target="_blank" rel="noopener noreferrer">
+                  {isPledge ? 'Give or pay your entry' : 'Pay your entry fee'}
+                </a>
+              </p>
+            )
           )}
+        </div>
+      )}
+      {sp.paid && (
+        <div className="notice good" role="status">
+          {sp.paid === 'already'
+            ? 'That entry fee is already paid. Thank you!'
+            : sp.paid === 'entry'
+              ? 'Thank you! Your entry fee went through. It shows as paid within a minute.'
+              : 'Thank you for your gift! It shows in the totals within a minute.'}
         </div>
       )}
       {sp.err && <div className="notice warn">{sp.err}</div>}
@@ -207,9 +233,20 @@ export default async function EventPage({ params, searchParams }: Props) {
           <div className="thermo" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round((raised / event.fundraising_goal) * 100))} aria-label="Fundraising progress">
             <span style={{ width: `${Math.min(100, (raised / event.fundraising_goal) * 100)}%` }} />
           </div>
-          {event.payment_url && (
-            <a className="btn small" href={event.payment_url} target="_blank" rel="noopener noreferrer">Give to the cause</a>
+          {cardOn ? (
+            <GiveByCard slug={event.slug} back={`/e/${event.slug}`} label="Give to the cause" />
+          ) : (
+            event.payment_url && (
+              <a className="btn small" href={event.payment_url} target="_blank" rel="noopener noreferrer">Give to the cause</a>
+            )
           )}
+        </div>
+      )}
+      {cardOn && !(event.fundraising_goal > 0) && (
+        <div className="card">
+          <h2>Give to the cause</h2>
+          {event.charity && <p className="muted">Every dollar goes to {event.charity}.</p>}
+          <GiveByCard slug={event.slug} back={`/e/${event.slug}`} />
         </div>
       )}
 

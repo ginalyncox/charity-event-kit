@@ -12,6 +12,8 @@ import AutoRefresh from '@/app/AutoRefresh';
 import { cancelMySignup, updateMySignup, updateMyTeam } from '@/lib/actions';
 import { resendVerification } from '@/lib/auth-actions';
 import { GameLine, playoffRoundLabel, rankTeams, rosterOf, teamName } from '@/app/ui';
+import { payEntry } from '@/lib/pay-actions';
+import { stripeConfigured } from '@/lib/stripe';
 
 export const metadata: Metadata = { title: 'My events', robots: { index: false } };
 export const dynamic = 'force-dynamic';
@@ -115,6 +117,9 @@ function PlayingCard({ bundle, userId }: { bundle: Bundle; userId: number }) {
   // Paid: a solo player's own flag, or the team's flag for registered teams.
   const paid = me.some((p) => p.paid) || teams.some((t) => teamIds.includes(t.id) && t.origin === 'registered' && t.paid);
   const champ = champion(games);
+  const cardOn = stripeConfigured() && event.stripe_ready && Boolean(event.stripe_account_id);
+  const payTeam = captainOf.find((t) => t.origin === 'registered' && !t.paid);
+  const paySolo = me.find((p) => p.is_solo && !p.paid);
 
   return (
     <div className="card">
@@ -128,8 +133,25 @@ function PlayingCard({ bundle, userId }: { bundle: Bundle; userId: number }) {
 
       <div className="btn-row" style={{ marginBottom: 12 }}>
         <span className={`pill ${paid ? 'good' : 'warn'}`}>{paid ? 'Paid' : 'Not marked paid yet'}</span>
-        {!paid && event.payment_url && (
-          <a className="btn small" href={event.payment_url} target="_blank" rel="noopener noreferrer">Pay entry fee</a>
+        {!paid && cardOn && payTeam && event.team_fee >= 50 ? (
+          <form action={payEntry}>
+            <input type="hidden" name="slug" value={event.slug} />
+            <input type="hidden" name="what" value="team" />
+            <input type="hidden" name="id" value={payTeam.id} />
+            <button className="btn small">Pay {money(event.team_fee)} team fee by card</button>
+          </form>
+        ) : !paid && cardOn && paySolo && event.solo_fee >= 50 ? (
+          <form action={payEntry}>
+            <input type="hidden" name="slug" value={event.slug} />
+            <input type="hidden" name="what" value="player" />
+            <input type="hidden" name="id" value={paySolo.id} />
+            <button className="btn small">Pay {money(event.solo_fee)} by card</button>
+          </form>
+        ) : (
+          !paid &&
+          event.payment_url && (
+            <a className="btn small" href={event.payment_url} target="_blank" rel="noopener noreferrer">Pay entry fee</a>
+          )
         )}
       </div>
 

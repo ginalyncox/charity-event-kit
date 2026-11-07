@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import GiveByCard from '@/app/GiveByCard';
+import { stripeConfigured } from '@/lib/stripe';
 import { getBundle, getEventBySlug } from '@/lib/data';
 import { hostOf, money } from '@/lib/format';
 import { rosterOf, teamRaised } from '@/app/ui';
 
 export const dynamic = 'force-dynamic';
 
-type Props = { params: Promise<{ slug: string; id: string }> };
+type Props = { params: Promise<{ slug: string; id: string }>; searchParams?: Promise<Record<string, string | undefined>> };
 
 async function load(slug: string, id: string) {
   const event = await getEventBySlug(slug);
@@ -28,8 +30,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /** A team's shareable fundraising page. */
-export default async function TeamPage({ params }: Props) {
+export default async function TeamPage({ params, searchParams }: Props) {
   const { slug, id } = await params;
+  const sp = (await searchParams) ?? {};
   const d = await load(slug, id);
   if (!d) notFound();
   const { event, bundle, team } = d;
@@ -46,6 +49,8 @@ export default async function TeamPage({ params }: Props) {
   return (
     <div style={{ maxWidth: 680, margin: '0 auto' }}>
       <p className="eyebrow">{event.name}</p>
+      {sp.paid && <div className="notice good" role="status">Thank you for your gift! It shows in the total within a minute.</div>}
+      {sp.err && <div className="notice warn">{sp.err}</div>}
       <h1>Support {team.name}</h1>
       <p className="lead muted">
         {team.name} is raising money{event.charity ? <> for {event.charity}</> : null}.
@@ -62,7 +67,16 @@ export default async function TeamPage({ params }: Props) {
             <span style={{ width: `${pct}%` }} />
           </div>
         )}
-        {giveUrl ? (
+        {stripeConfigured() && event.stripe_ready && event.stripe_account_id ? (
+          <>
+            <GiveByCard slug={event.slug} back={`/e/${event.slug}/t/${team.id}`} teamId={team.id} label={`Give to support ${team.name}`} />
+            {team.pay_url && (
+              <p className="small muted" style={{ marginTop: 8 }}>
+                Or give through <a href={team.pay_url} target="_blank" rel="noopener noreferrer">{hostOf(team.pay_url)}</a>.
+              </p>
+            )}
+          </>
+        ) : giveUrl ? (
           <>
             <a className="btn" href={giveUrl} target="_blank" rel="noopener noreferrer">Give to {team.name}</a>
             <p className="small muted" style={{ marginTop: 8 }}>
